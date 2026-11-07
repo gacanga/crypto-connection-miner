@@ -1,0 +1,8 @@
+build/
+dev/
+logs/
+*.obj
+*.o
+*.exp
+*.lib
+*.pdb
