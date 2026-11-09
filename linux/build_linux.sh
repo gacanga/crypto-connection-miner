@@ -1,6 +1,6 @@
 #!/bin/bash
-# build_linux.sh [output] - builds the Linux x86-64 Crypto Connection Miner 0.7 (multi-coin NVIDIA miner: gostd GOSTcoin,
-#   lyra2v2 Bitmark, neoscrypt Feathercoin, ting Daler; no dev fee) with CUDA 12.9.
+# build_linux.sh [output] - builds the Linux x86-64 Crypto Connection Miner 0.8 (multi-coin NVIDIA miner: gostd GOSTcoin,
+#   lyra2v2 Bitmark, neoscrypt Feathercoin, ting Daler, equihash192 Ycash; no dev fee) with CUDA 12.9.
 #   CUDA: $CUDA_HOME (default ~/cuda/12.9 or /usr/local/cuda-12.9); gcc / g++ 11 or later.
 #   Machine code for sm_50 sm_52 sm_60 sm_61 sm_70 sm_75 sm_80 sm_86 sm_89 sm_90 sm_100 sm_120 + PTX compute_120.
 #   Static CUDA runtime, static libstdc++ / libgcc: the binary only needs the NVIDIA driver (libcuda.so.1) and glibc.
@@ -21,11 +21,17 @@ B=build/linux
 mkdir -p "$(dirname "$OUT")" "$B"
 "$NVCC" --version | tail -1
 CSRC="src/neoscrypt/neoscrypt.c src/gost_ref.c src/sha256.c src/lyra2ref/lyra2re2_only.c src/lyra2ref/Lyra2.c src/lyra2ref/Sponge.c src/lyra2ref/sha3/sph_blake.c src/lyra2ref/sha3/sph_keccak.c src/lyra2ref/sha3/sph_cubehash.c src/lyra2ref/sha3/sph_skein.c src/lyra2ref/sha3/sph_bmw.c"
-CUSRC="gpu/gostminer.cu gpu/lyra2v2/lyra2v2_gpu.cu gpu/lyra2v2/ccminer_shim.cu gpu/lyra2v2/cuda_blake256.cu gpu/lyra2v2/cuda_bmw256.cu gpu/lyra2v2/cuda_cubehash256.cu gpu/lyra2v2/cuda_skein256.cu gpu/lyra2v2/cuda_lyra2v2.cu gpu/neoscrypt/neoscrypt_gpu.cu gpu/neoscrypt/cuda_neoscrypt.cu gpu/ting/ting_gpu.cu"
+CUSRC="gpu/gostminer.cu gpu/lyra2v2/lyra2v2_gpu.cu gpu/lyra2v2/ccminer_shim.cu gpu/lyra2v2/cuda_blake256.cu gpu/lyra2v2/cuda_bmw256.cu gpu/lyra2v2/cuda_cubehash256.cu gpu/lyra2v2/cuda_skein256.cu gpu/lyra2v2/cuda_lyra2v2.cu gpu/neoscrypt/neoscrypt_gpu.cu gpu/neoscrypt/cuda_neoscrypt.cu gpu/ting/ting_gpu.cu gpu/equihash192/eq_gpu.cu"
+CXXSRC="gpu/equihash192/eq_host.cpp"
 OBJS=""
 for c in $CSRC; do
   o="$B/$(echo "$c" | tr '/' '_' | sed 's/\.c$/.o/')"
   if [ ! -f "$o" ] || [ "$c" -nt "$o" ]; then gcc -O2 -fno-strict-aliasing -c "$c" -Isrc -o "$o"; fi
+  OBJS="$OBJS $o"
+done
+for c in $CXXSRC; do
+  o="$B/$(echo "$c" | tr '/' '_' | sed 's/\.cpp$/.o/')"
+  if [ ! -f "$o" ] || [ "$c" -nt "$o" ] || [ gpu/equihash192/eq_common.h -nt "$o" ]; then g++ -O2 -std=c++17 -c "$c" -Isrc -Igpu -o "$o"; fi
   OBJS="$OBJS $o"
 done
 compiled=0

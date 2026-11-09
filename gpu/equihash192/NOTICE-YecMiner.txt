@@ -1,0 +1,15 @@
+YecMiner - GPU miner for Ycash (YEC), Equihash(192,7) "ZcashPoW".
+Copyright 2026 Julien Motte.  Licensed under the Apache License 2.0 (see LICENSE).
+No developer fee.
+
+The Equihash solver (Wagner's algorithm, CUDA) and its host code are original work,
+shared with KrgnMiner (Kerrigan, same author); only the BLAKE2b personalization and the
+stratum details differ.
+Correctness references used for the tests only (not linked into the miner):
+  - real Ycash blocks (explorer.ycash.xyz, getblock JSON): mined solutions and block
+    hashes in src/eq_vectors.h (eq_chain), and two of their headers as GPU vectors;
+  - Ycash (MIT, github.com/ycashfoundation/ycash) src/crypto/equihash.cpp and
+    src/consensus/upgrades.cpp: parameters N = 192, K = 7, personalization "ZcashPoW";
+  - libsodium / Python hashlib: BLAKE2b known answers and an independent validation of
+    every reference solution (tools/gen_vectors.py, tools/check_blocks.py).
+The stratum client (json.h, tls_conn.*) comes from FiloMiner (same author, Apache-2.0).
