@@ -1,17 +1,21 @@
-Crypto Connection Miner 0.5.0 (named GostMiner up to 0.4.0) - multi-coin GPU miner for NVIDIA (gostd: GOSTcoin,
-lyra2v2: Bitmark), no dev fee.
+Crypto Connection Miner 0.6.0 (named GostMiner up to 0.4.0) - multi-coin GPU miner for NVIDIA (gostd: GOSTcoin,
+lyra2v2: Bitmark, neoscrypt: Feathercoin), no dev fee.
 Copyright (c) 2026 Crypto Connection Miner authors.
 
 Crypto Connection Miner is free software: you can redistribute it and/or modify it under the terms of the GNU General
 Public License version 3 as published by the Free Software Foundation (see COPYING.txt). It is distributed WITHOUT
 ANY WARRANTY. The complete source code of this release is published at https://github.com/gacanga/crypto-connection-miner
-and next to the binaries (CryptoConnectionMiner-v0.5.0-src.tar.gz on the downloads page of crypto-connection.net).
+and next to the binaries (CryptoConnectionMiner-v0.6.0-src.tar.gz on the downloads page of crypto-connection.net).
 
-Why GPL-3: the lyra2v2 GPU kernels come from ccminer 2.3.1 (tpruvot, GPL-3), as improved in MYMINER.
+Why GPL-3: the lyra2v2 and neoscrypt GPU kernels come from ccminer 2.3.1 (tpruvot, GPL-3), as improved in MYMINER.
 
 Third-party code:
 - gpu/lyra2v2: ccminer 2.3.1 (Christian Buchner, Christian H., Tanguy Pruvot, djm34, Nanashi Meiyo-Meijin and
   others), GNU GPL v3; MYMINER changes (2026).
+- gpu/neoscrypt: ccminer 2.3.1 NeoScrypt kernels (djm34, Nanashi Meiyo-Meijin, Tanguy Pruvot and others), GNU GPL
+  v3; host part adapted for this miner (2026).
+- src/neoscrypt (CPU check of NeoScrypt): NeoScrypt reference, Copyright (c) 2009 Colin Percival, 2011 ArtForz,
+  2012 Andrew Moon, 2012 Samuel Neves, 2014 John Doering, BSD 2-clause licence (notice in the file).
 - src/gost_ref.c (GOST R 34.11-2012 "Streebog"): GOSTcoin src/Gost.cpp, Copyright (c) 2013-2018 The PurpleI2P
   Project, BSD-3-Clause; sphlib, Copyright (c) 2007-2010 Projet RNRT SAPHIR, MIT licence (Thomas Pornin).
 - src/lyra2ref (CPU check of lyra2rev2): Lyra2 reference by the Lyra PHC team (public domain); sphlib

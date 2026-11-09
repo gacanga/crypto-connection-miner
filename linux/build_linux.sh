@@ -1,6 +1,6 @@
 #!/bin/bash
-# build_linux.sh [output] - builds the Linux x86-64 Crypto Connection Miner 0.5 (multi-coin NVIDIA miner: gostd GOSTcoin,
-#   lyra2v2 Bitmark; no dev fee) with CUDA 12.9.
+# build_linux.sh [output] - builds the Linux x86-64 Crypto Connection Miner 0.6 (multi-coin NVIDIA miner: gostd GOSTcoin,
+#   lyra2v2 Bitmark, neoscrypt Feathercoin; no dev fee) with CUDA 12.9.
 #   CUDA: $CUDA_HOME (default ~/cuda/12.9 or /usr/local/cuda-12.9); gcc / g++ 11 or later.
 #   Machine code for sm_50 sm_52 sm_60 sm_61 sm_70 sm_75 sm_80 sm_86 sm_89 sm_90 sm_100 sm_120 + PTX compute_120.
 #   Static CUDA runtime, static libstdc++ / libgcc: the binary only needs the NVIDIA driver (libcuda.so.1) and glibc.
@@ -20,8 +20,8 @@ ARCHS="${GM_ARCHS:--gencode arch=compute_50,code=sm_50 -gencode arch=compute_52,
 B=build/linux
 mkdir -p "$(dirname "$OUT")" "$B"
 "$NVCC" --version | tail -1
-CSRC="src/gost_ref.c src/sha256.c src/lyra2ref/lyra2re2_only.c src/lyra2ref/Lyra2.c src/lyra2ref/Sponge.c src/lyra2ref/sha3/sph_blake.c src/lyra2ref/sha3/sph_keccak.c src/lyra2ref/sha3/sph_cubehash.c src/lyra2ref/sha3/sph_skein.c src/lyra2ref/sha3/sph_bmw.c"
-CUSRC="gpu/gostminer.cu gpu/lyra2v2/lyra2v2_gpu.cu gpu/lyra2v2/ccminer_shim.cu gpu/lyra2v2/cuda_blake256.cu gpu/lyra2v2/cuda_bmw256.cu gpu/lyra2v2/cuda_cubehash256.cu gpu/lyra2v2/cuda_skein256.cu gpu/lyra2v2/cuda_lyra2v2.cu"
+CSRC="src/neoscrypt/neoscrypt.c src/gost_ref.c src/sha256.c src/lyra2ref/lyra2re2_only.c src/lyra2ref/Lyra2.c src/lyra2ref/Sponge.c src/lyra2ref/sha3/sph_blake.c src/lyra2ref/sha3/sph_keccak.c src/lyra2ref/sha3/sph_cubehash.c src/lyra2ref/sha3/sph_skein.c src/lyra2ref/sha3/sph_bmw.c"
+CUSRC="gpu/gostminer.cu gpu/lyra2v2/lyra2v2_gpu.cu gpu/lyra2v2/ccminer_shim.cu gpu/lyra2v2/cuda_blake256.cu gpu/lyra2v2/cuda_bmw256.cu gpu/lyra2v2/cuda_cubehash256.cu gpu/lyra2v2/cuda_skein256.cu gpu/lyra2v2/cuda_lyra2v2.cu gpu/neoscrypt/neoscrypt_gpu.cu gpu/neoscrypt/cuda_neoscrypt.cu"
 OBJS=""
 for c in $CSRC; do
   o="$B/$(echo "$c" | tr '/' '_' | sed 's/\.c$/.o/')"
@@ -31,7 +31,7 @@ done
 compiled=0
 for c in $CUSRC; do
   o="$B/$(echo "$c" | tr '/' '_' | sed 's/\.cu$/.o/')"
-  if [ ! -f "$o" ] || [ "$c" -nt "$o" ] || [ "$(dirname "$c")" = "gpu/lyra2v2" -a gpu/lyra2v2/cuda_helper.h -nt "$o" ]; then
+  if [ ! -f "$o" ] || [ "$c" -nt "$o" ] || [ gpu/lyra2v2/cuda_helper.h -nt "$o" ]; then
     if [ "${GM_ONE:-0}" = "1" ] && [ $compiled -ge 1 ]; then echo "more objects to build: run again"; exit 0; fi
     echo "nvcc $c"
     "$NVCC" -O3 --threads 0 $ARCHS -Wno-deprecated-gpu-targets -std=c++17 -Igpu -Isrc -Igpu/lyra2v2 \
