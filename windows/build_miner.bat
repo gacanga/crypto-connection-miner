@@ -1,14 +1,14 @@
 @echo off
 REM ===========================================================================
-REM build_miner.bat [output exe] - builds Crypto Connection Miner 0.6 (multi-coin NVIDIA miner: gostd GOSTcoin, lyra2v2 Bitmark,
-REM   neoscrypt Feathercoin;
+REM build_miner.bat [output exe] - builds Crypto Connection Miner 0.7 (multi-coin NVIDIA miner: gostd GOSTcoin, lyra2v2 Bitmark,
+REM   neoscrypt Feathercoin, ting Daler;
 REM   solo + pool, no dev fee) with nvcc + MSVC.
 REM   Output : the given path relative to the gostminer folder (default dev\gostminer.exe)
 REM            -> a new version can be built while dev\gostminer.exe is mining.
 REM   GPUs   : machine code for every NVIDIA generation CUDA 12.9 targets (Maxwell sm_50 to Blackwell sm_120)
 REM            + PTX compute_120 for later GPUs. Set GM_ARCHS to build fewer, e.g. set GM_ARCHS=-arch=sm_61
 REM   Needs  : CUDA 12.9, Visual Studio 2022 (C++ tools). Static CUDA and C runtimes.
-REM   Sources: gpu\gostminer.cu, gpu\lyra2v2\*.cu + gpu\neoscrypt\*.cu (MYMINER / ccminer kernels, GPL-3), src\gost_ref.c,
+REM   Sources: gpu\gostminer.cu, gpu\lyra2v2\*.cu + gpu\neoscrypt\*.cu (MYMINER / ccminer kernels, GPL-3), gpu\ting\ting_gpu.cu, src\gost_ref.c,
 REM            src\sha256.c, src\lyra2ref\*.c + src\lyra2ref\sha3\*.c (CPU reference of lyra2rev2, MiningCore libmultihash),
 REM            src\neoscrypt\neoscrypt.c (CPU reference of NeoScrypt, BSD)
 REM   Log    : logs\build_miner.log
@@ -50,12 +50,13 @@ if exist "%OUT%" (
 )
 set "L2=gpu\lyra2v2\lyra2v2_gpu.cu gpu\lyra2v2\ccminer_shim.cu gpu\lyra2v2\cuda_blake256.cu gpu\lyra2v2\cuda_bmw256.cu gpu\lyra2v2\cuda_cubehash256.cu gpu\lyra2v2\cuda_skein256.cu gpu\lyra2v2\cuda_lyra2v2.cu"
 set "NS=gpu\neoscrypt\neoscrypt_gpu.cu gpu\neoscrypt\cuda_neoscrypt.cu"
+set "TING=gpu\ting\ting_gpu.cu"
 set "REF=src\neoscrypt\neoscrypt.c src\gost_ref.c src\sha256.c src\lyra2ref\lyra2re2_only.c src\lyra2ref\Lyra2.c src\lyra2ref\Sponge.c src\lyra2ref\sha3\sph_blake.c src\lyra2ref\sha3\sph_keccak.c src\lyra2ref\sha3\sph_cubehash.c src\lyra2ref\sha3\sph_skein.c src\lyra2ref\sha3\sph_bmw.c"
 if not exist build\win mkdir build\win
-echo [%date% %time%] compiling gpu\gostminer.cu + lyra2v2 and neoscrypt kernels + CPU references >> "%LOG%"
+echo [%date% %time%] compiling gpu\gostminer.cu + lyra2v2, neoscrypt and ting kernels + CPU references >> "%LOG%"
 nvcc -O3 --threads 0 %GM_ARCHS% -Wno-deprecated-gpu-targets -allow-unsupported-compiler -std=c++17 ^
      -Igpu -Isrc -Igpu\lyra2v2 -Xptxas -v -Xcompiler "/O2 /EHsc /W3 /MT" -cudart static -odir build\win ^
-     -o "%OUT%" gpu\gostminer.cu %L2% %NS% %REF% -lws2_32 >> "%LOG%" 2>&1
+     -o "%OUT%" gpu\gostminer.cu %L2% %NS% %TING% %REF% -lws2_32 >> "%LOG%" 2>&1
 if not exist "%OUT%" goto :fail
 echo [%date% %time%] build_miner OK >> "%LOG%"
 echo [exit 0]>> "%LOG%"

@@ -1,10 +1,12 @@
 /*
- * gostminer.cu - Crypto Connection Miner 0.6 (named GostMiner up to 0.4): multi-coin GPU miner for NVIDIA, no dev fee.
+ * gostminer.cu - Crypto Connection Miner 0.7 (named GostMiner up to 0.4): multi-coin GPU miner for NVIDIA, no dev fee.
  *   --algo gostd     (default) GOSTcoin (GST): gostd = GOST R 34.11-2012-256( GOST R 34.11-2012-512( 80-byte header ) )
  *   --algo lyra2v2   Bitmark (MARKS) and other Lyra2REv2 coins: blake256 > keccak256 > cubehash256 > Lyra2(1,4,4) >
  *                    skein256 > cubehash256 > bmw256 (kernels of MYMINER / ccminer 2.3.1 in gpu/lyra2v2, GPL-3)
  *   --algo neoscrypt Feathercoin (FTC) and other NeoScrypt coins: FastKDF(BLAKE2s) > Salsa20/20 + ChaCha20/20
  *                    (N 128, r 2) > FastKDF (kernels of ccminer 2.3.1 / MYMINER in gpu/neoscrypt, GPL-3) - since 0.6.0
+ *   --algo ting      Daler (DLR) on Ting: SHA-256("Ting/" 05 00 "block" || 294-byte header, 16-byte nonce), one
+ *                    compression per attempt from a midstate (gpu/ting) - since 0.7.0
  * Solo on a local GOSTcoin wallet (RPC getwork, gostd only) or on a stratum pool (MiningCore).
  * NVIDIA GPUs from Maxwell (sm_50) to Blackwell (sm_120), Windows and Linux.
  *
@@ -22,13 +24,16 @@
  *               share target = 256 * diff1 / difficulty (ccminer / MiningCore "shareMultiplier": 256 for Lyra2).
  *      neoscrypt: same coinbase and merkle as lyra2v2 (Bitcoin); share target = 65536 * diff1 / difficulty
  *               (ccminer / MiningCore "shareMultiplier": 65536 for NeoScrypt).
+ *      ting   : no coinbase on the miner side: the pool sends the 278 header bytes before the nonce; each GPU rolls
+ *               nonce bytes 0..3 (GPU counter) and 4..11 (GPU slot + counter), bytes 12..15 = extranonce1;
+ *               share target = 2^224 / difficulty (Crypto Connection stratum for Ting, see README.md).
  *
- * Usage: crypto-connection-miner.exe [--algo gostd|lyra2v2|neoscrypt] [--gpus 0,1,2] [--kernel N] [--intensity N] [--stats 30] [--log <file>]
+ * Usage: crypto-connection-miner.exe [--algo gostd|lyra2v2|neoscrypt|ting] [--gpus 0,1,2] [--kernel N] [--intensity N] [--stats 30] [--log <file>]
  *          [--selftest] [--bench S]
  *          solo: [--conf <gostcoin.conf>] [--host 127.0.0.1] [--port N] [--refresh 10]
  *          pool: --pool <host>:<port> --user <address>.<worker> [--pass x]
  *          --user without --pool and without --conf: the Crypto Connection pool, crypto-connection.net port 4033
- *          (gostd), 4043 (lyra2v2) or 4063 (neoscrypt).
+ *          (gostd), 4043 (lyra2v2), 4063 (neoscrypt) or 4073 (ting).
  *   --kernel N (gostd): table placement variant (0 maxw 3 blocks/SM, 1 mix34 3 blocks/SM, 2 maxw 4 blocks/SM + shared
  *   stash, 3 shared 2 blocks/SM, 4 maxw 2 blocks/SM); by default each GPU measures every variant for 3 s at start-up
  *   and keeps the fastest (the best one depends on the GPU generation and clocks).
@@ -41,7 +46,7 @@
  *   on Windows, ~/.gostcoin/gostcoin.conf on Linux); they are never printed.
  * Build: windows\build_miner.bat [output exe] (CUDA 12.9 + Visual Studio 2022) or linux/build_linux.sh (CUDA 12.9),
  *   static CUDA runtime, code for sm_50 sm_52 sm_60 sm_61 sm_70 sm_75 sm_80 sm_86 sm_89 sm_90 sm_100 sm_120 + PTX.
- * Licence: GPL-3 (the lyra2v2 and neoscrypt kernels come from ccminer, GPL-3); gostd code: see LICENSE / README.
+ * Licence: GPL-3 (the lyra2v2 and neoscrypt kernels come from ccminer, GPL-3); gostd and ting code: see LICENSE / README.
  */
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
@@ -94,14 +99,16 @@ static void sleep_ms(unsigned ms) { usleep((useconds_t)ms * 1000); }
 #include "lyra2v2/lyra2v2_gpu.h"
 #include "neoscrypt/neoscrypt_gpu.h"
 #include "neoscrypt_ref.h"
+#include "ting/ting_gpu.h"
 
-#define GOSTMINER_VERSION "0.6.0"
+#define GOSTMINER_VERSION "0.7.0"
 #define MINER_NAME "Crypto Connection Miner"
 /* default pool when only --user is given: the Crypto Connection pool (crypto-connection.net) */
 #define DEFAULT_POOL_HOST "crypto-connection.net"
 #define DEFAULT_POOL_PORT_GOSTD 4033
 #define DEFAULT_POOL_PORT_LYRA2V2 4043
 #define DEFAULT_POOL_PORT_NEOSCRYPT 4063
+#define DEFAULT_POOL_PORT_TING 4073
 
 /* receive / send time-outs of a socket, in milliseconds */
 static void sock_timeouts(SOCKET s, int rcv_ms, int snd_ms)
@@ -241,8 +248,11 @@ __global__ void __launch_bounds__(256, 1) k_dump(uint32_t start, uint32_t n, uin
 /* ------------------------------------------------------------------------------------------------
  * configuration
  * ---------------------------------------------------------------------------------------------- */
-enum algo_t { ALGO_GOSTD = 0, ALGO_LYRA2V2 = 1, ALGO_NEOSCRYPT = 2 };
-static const char *algo_name(algo_t a) { return a == ALGO_LYRA2V2 ? "lyra2v2" : a == ALGO_NEOSCRYPT ? "neoscrypt" : "gostd"; }
+enum algo_t { ALGO_GOSTD = 0, ALGO_LYRA2V2 = 1, ALGO_NEOSCRYPT = 2, ALGO_TING = 3 };
+static const char *algo_name(algo_t a)
+{
+	return a == ALGO_LYRA2V2 ? "lyra2v2" : a == ALGO_NEOSCRYPT ? "neoscrypt" : a == ALGO_TING ? "ting" : "gostd";
+}
 
 struct config {
 	algo_t algo = ALGO_GOSTD;
@@ -672,8 +682,18 @@ struct sjob {
 	std::string ntime_hex;
 };
 
+/* Ting job (Crypto Connection stratum for Ting): mining.notify [job id, header prefix (278 bytes before the nonce),
+ * height, network target (64 hex, big-endian), clean] */
+struct tjob {
+	std::string id;
+	std::vector<uint8_t> prefix;       /* TING_NONCE_OFFSET bytes */
+	uint64_t height = 0;
+	uint8_t net_target_be[32];
+};
+
 static std::mutex g_sm;                       /* protects the stratum state below */
 static sjob g_job;
+static tjob g_tjob;
 static bool g_have_job = false;
 static double g_diff = 1.0;
 static std::vector<uint8_t> g_en1;
@@ -765,6 +785,23 @@ static void s_handle(const std::string &line)
 				mlog("pool: difficulty %.6g", g_diff);
 				g_gen++;
 			}
+			return;
+		}
+		if (method->s == "mining.notify" && g_cfg.algo == ALGO_TING && params && params->t == jv::ARR && params->a.size() >= 4) {
+			const auto &a = params->a;
+			tjob j;
+			if (a[0].t != jv::STR || a[1].t != jv::STR || a[2].t != jv::NUM || a[3].t != jv::STR) { mlog("pool: bad mining.notify"); return; }
+			j.id = a[0].s;
+			if (!unhexv(a[1].s, j.prefix) || j.prefix.size() != TING_NONCE_OFFSET) { mlog("pool: bad Ting header (%u hex digits)", (unsigned)a[1].s.size()); return; }
+			j.height = (uint64_t)a[2].n;
+			if (a[3].s.size() != 64 || !unhex(a[3].s, j.net_target_be, 32)) { mlog("pool: bad Ting target"); return; }
+			const bool clean = a.size() > 4 && a[4].t == jv::BOOL && a[4].b;
+			std::lock_guard<std::mutex> lk(g_sm);
+			const bool newblock = !g_have_job || j.height != g_tjob.height;
+			g_tjob = j;
+			g_have_job = true;
+			g_gen++;
+			if (newblock) mlog("pool: new block job %s (height %llu)%s", j.id.c_str(), (unsigned long long)j.height, clean ? " clean" : "");
 			return;
 		}
 		if (method->s == "mining.notify" && params && params->t == jv::ARR && params->a.size() >= 8) {
@@ -1485,8 +1522,250 @@ static void ns_gpu_thread(int gpu, int slot)
 	}
 }
 
+/* ------------------------------------------------------------------------------------------------
+ * ting GPU part (gpu/ting): Daler (DLR) on Ting
+ * ---------------------------------------------------------------------------------------------- */
+/* Ting block 35104 (09/11/2026): its 294-byte header (REST /v1/blocks/35104/raw) and its BlockId */
+static const char *TING_REF_HEADER =
+	"010015d6549cfacd816f835c632b4c67308d1c63e642f4cbf404936843067070510720890000000000000000000000180c2407987813e505"
+	"1d0ce743ccb3ecae9a71fc1c17532c3b16efc690f16a000000000000000000412c7fffffffffffffffffffffffffffffffffffffffffffff"
+	"ffff789f0aee1850596b0c5192ba5f8f6b9a923cbd02e3688c898ff4ca6463830e7a3db33b91fcdbbb23fb46f58df4241c33ea72ea87736e"
+	"ba6291b6b276be45e8a7179b0097a4a3a131bc4f63430322babc69884daac6a45850c4bd29dee5fa5dc53bb3150000000000090000000000"
+	"00000a030000000000000000000000000000000000003c2b758e73ce5d2cb01677005947291613c1d7197ca1cd538730deb365ae648b4d4f"
+	"a55b283000000000000000000000";
+static const char *TING_REF_ID = "000000000018808fa269dfc76ca3ff3e26299b2c42c503ee6064d1c342538275";
+#define TING_TARGET_OFFSET 82   /* header: version 2, chain id 32, height 8, parent 32, timestamp 8, then the target */
+
+/* big-endian 256-bit share target = 2^224 / difficulty (Crypto Connection stratum for Ting: difficulty 1 = about
+ * 2^32 hashes per share); t64 = its top 64 bits */
+static void ting_diff_to_target(double diff, uint8_t be[32], uint64_t &t64)
+{
+	memset(be, 0, 32);
+	if (diff <= 0) diff = 1e-12;
+	double x = 4294967296.0 / diff;   /* target / 2^192 */
+	uint64_t limb[4] = {0, 0, 0, 0};  /* limb[0] = bits 192..255 */
+	if (x >= 18446744073709551615.0) { limb[0] = limb[1] = limb[2] = limb[3] = ~0ULL; }
+	else {
+		for (int L = 0; L < 4; L++) {
+			const double f = floor(x);
+			limb[L] = (uint64_t)f;
+			x = (x - f) * 18446744073709551616.0;
+		}
+	}
+	for (int L = 0; L < 4; L++)
+		for (int k = 0; k < 8; k++) be[8 * L + k] = (uint8_t)(limb[L] >> (56 - 8 * k));
+	t64 = limb[0];
+}
+
+/* big-endian hash <= big-endian target */
+static bool be_le_target(const uint8_t h[32], const uint8_t t[32])
+{
+	return memcmp(h, t, 32) <= 0;
+}
+
+static uint64_t be64(const uint8_t *p)
+{
+	uint64_t v = 0;
+	for (int i = 0; i < 8; i++) v = (v << 8) | p[i];
+	return v;
+}
+
+struct twork {
+	uint64_t gen = 0;
+	std::string job_id;
+	std::vector<uint8_t> prefix;
+	uint8_t nonce_hi[12];      /* nonce bytes 4..15 */
+	uint8_t target_be[32];
+	uint64_t target64 = 0;
+	uint8_t net_be[32];
+	uint64_t height = 0;
+};
+
+/* a Ting work unit for one GPU: nonce bytes 4..11 = GPU slot + counter, bytes 12..15 = the pool's extranonce1 */
+static bool ting_pool_work(int slot, uint64_t &ctr, twork &w)
+{
+	tjob j;
+	std::vector<uint8_t> en1;
+	double diff;
+	{
+		std::lock_guard<std::mutex> lk(g_sm);
+		if (!g_have_job || g_en1.size() != 4 || g_tjob.prefix.size() != TING_NONCE_OFFSET) return false;
+		j = g_tjob;
+		en1 = g_en1;
+		diff = g_diff;
+		w.gen = g_gen.load();
+	}
+	const uint64_t c = ctr++;
+	w.nonce_hi[0] = (uint8_t)slot;
+	for (int i = 0; i < 7; i++) w.nonce_hi[1 + i] = (uint8_t)(c >> (8 * i));
+	memcpy(w.nonce_hi + 8, en1.data(), 4);
+	w.job_id = j.id;
+	w.prefix = j.prefix;
+	w.height = j.height;
+	memcpy(w.net_be, j.net_target_be, 32);
+	ting_diff_to_target(diff, w.target_be, w.target64);
+	return true;
+}
+
+static void ting_nonce(const twork &w, uint32_t counter, uint8_t nonce[16])
+{
+	nonce[0] = (uint8_t)counter; nonce[1] = (uint8_t)(counter >> 8); nonce[2] = (uint8_t)(counter >> 16); nonce[3] = (uint8_t)(counter >> 24);
+	memcpy(nonce + 4, w.nonce_hi, 12);
+}
+
+static void ting_submit_share(int gpu, const twork &w, const uint8_t nonce[16], const uint8_t id[32])
+{
+	const uint32_t mid = ++g_next_id;
+	if (be_le_target(id, w.net_be)) {
+		g_candidates++;
+		mlog("GPU %d: share is a BLOCK candidate, BlockId %s (job %s, height %llu)", gpu, tohex(id, 32).c_str(), w.job_id.c_str(),
+			 (unsigned long long)w.height);
+	}
+	std::string msg = "{\"id\":" + std::to_string(mid) + ",\"method\":\"mining.submit\",\"params\":[\"" + jesc(g_cfg.worker) +
+					  "\",\"" + jesc(w.job_id) + "\",\"" + tohex(nonce, 16) + "\"]}";
+	if (s_send(msg)) g_submitted++;
+	else mlog("GPU %d: share not sent (pool disconnected)", gpu);
+}
+
+static int g_ting_grid[16];
+
+static bool ting_gpu_init(int gpu)
+{
+	CKR(cudaSetDevice(gpu));
+	cudaSetDeviceFlags(cudaDeviceScheduleBlockingSync);   /* low CPU use; ignored if the context exists */
+	cudaGetLastError();
+	cudaDeviceProp prop;
+	CKR(cudaGetDeviceProperties(&prop, gpu));
+	int grid = 0;
+	CKR(ting_init(gpu, &grid));
+	g_ting_grid[gpu] = grid;
+	mlog("GPU %d: %s, compute %d.%d, %d SM, %.1f GB, ting grid %d x 256", gpu, prop.name, prop.major, prop.minor,
+		 prop.multiProcessorCount, prop.totalGlobalMem / 1073741824.0, grid);
+	return true;
+}
+
+/* GPU self test: (1) the GPU finds the nonce of a real Ting block (35104) in a launch that contains it,
+ * (2) every candidate of launches with an easy target validates on the CPU */
+static bool ting_gpu_selftest(int gpu)
+{
+	uint8_t hdr[TING_HEADER_SIZE];
+	unhex(TING_REF_HEADER, hdr, TING_HEADER_SIZE);
+	const uint8_t *nonce = hdr + TING_NONCE_OFFSET;
+	const uint32_t counter = (uint32_t)nonce[0] | ((uint32_t)nonce[1] << 8) | ((uint32_t)nonce[2] << 16) | ((uint32_t)nonce[3] << 24);
+	CKR(ting_set_job(gpu, hdr, nonce + 4, be64(hdr + TING_TARGET_OFFSET)));
+	const uint32_t span = (uint32_t)g_ting_grid[gpu] * 256u;
+	const uint32_t start = counter - (counter % span);
+	uint32_t res[1 + TING_MAX_RES];
+	CKR(ting_scan(gpu, start, 1, res));
+	bool found = false;
+	for (uint32_t i = 0; i < res[0] && i < TING_MAX_RES; i++) if (res[1 + i] == counter) found = true;
+	/* easy target: top 64 bits <= 0x0000ffff...: about 1 hash in 65536 */
+	uint8_t pre[TING_NONCE_OFFSET], hi[12], n16[16], id[32];
+	for (int i = 0; i < TING_NONCE_OFFSET; i++) pre[i] = (uint8_t)(i * 29 + 7 + gpu);
+	for (int i = 0; i < 12; i++) hi[i] = (uint8_t)(i * 53 + 1);
+	const uint64_t easy = 0x0000FFFFFFFFFFFFULL;
+	CKR(ting_set_job(gpu, pre, hi, easy));
+	int checked = 0, bad = 0;
+	for (int k = 0; k < 4; k++) {
+		CKR(ting_scan(gpu, 0x01000000u * (k + 1), 1, res));
+		for (uint32_t i = 0; i < res[0] && i < TING_MAX_RES; i++) {
+			const uint32_t c = res[1 + i];
+			n16[0] = (uint8_t)c; n16[1] = (uint8_t)(c >> 8); n16[2] = (uint8_t)(c >> 16); n16[3] = (uint8_t)(c >> 24);
+			memcpy(n16 + 4, hi, 12);
+			ting_block_id(pre, n16, id);
+			checked++;
+			if (be64(id) > easy) bad++;
+		}
+	}
+	const bool ok = found && checked > 0 && bad == 0;
+	mlog("GPU %d: ting self test: Ting block 35104 nonce %s, %d candidates checked on the CPU, %d wrong -> %s", gpu,
+		 found ? "found" : "NOT found", checked, bad, ok ? "OK" : "FAILED");
+	return ok;
+}
+
+/* mines Ting on one GPU until quit (returns true) or a CUDA error (returns false, details logged) */
+static bool ting_gpu_mine(int gpu, int slot)
+{
+	const bool bench = g_cfg.bench > 0;
+	const uint32_t span = (uint32_t)g_ting_grid[gpu] * 256u;
+	uint64_t ctr = 0;
+	uint32_t npt = 16;
+	while (!g_quit) {
+		twork w;
+		if (bench) {
+			w.prefix.resize(TING_NONCE_OFFSET);
+			for (int i = 0; i < TING_NONCE_OFFSET; i++) w.prefix[i] = (uint8_t)(rand() & 0xFF);
+			for (int i = 0; i < 12; i++) w.nonce_hi[i] = (uint8_t)(rand() & 0xFF);
+			memset(w.target_be, 0, 32);
+			w.target64 = 0;
+		} else if (!ting_pool_work(slot, ctr, w)) { sleep_ms(200); continue; }
+		cudaError_t e = ting_set_job(gpu, w.prefix.data(), w.nonce_hi, w.target64);
+		if (e != cudaSuccess) { mlog("GPU %d: job upload failed: %s", gpu, cudaGetErrorString(e)); return false; }
+		const auto t0 = std::chrono::steady_clock::now();
+		uint64_t start = 0;
+		while (!g_quit && start < (1ULL << 32)) {
+			if (!bench) {
+				if (g_gen.load() != w.gen) break;   /* new job, difficulty or connection */
+			} else if (std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count() > g_cfg.refresh) break;
+			uint64_t n = (uint64_t)span * npt;
+			if (start + n > (1ULL << 32)) {
+				const uint64_t left = (1ULL << 32) - start;
+				npt = (uint32_t)((left + span - 1) / span);
+				if (npt == 0) npt = 1;
+				n = (uint64_t)span * npt;
+			}
+			uint32_t res[1 + TING_MAX_RES];
+			const auto l0 = std::chrono::steady_clock::now();
+			e = ting_scan(gpu, (uint32_t)start, npt, res);
+			if (e != cudaSuccess) {
+				mlog("GPU %d: CUDA error %s (ting, grid %d, %u nonces per thread, start %08llx, %.1f s on this work)", gpu,
+					 cudaGetErrorString(e), g_ting_grid[gpu], npt, (unsigned long long)start,
+					 std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count());
+				return false;
+			}
+			const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - l0).count();
+			g_stat[gpu].hashes += n;
+			start += n;
+			/* aim at ~150 ms per launch (well below the Windows watchdog) */
+			if (ms < 100 && npt < 4096) npt *= 2;
+			else if (ms > 300 && npt > 1) npt /= 2;
+			const uint32_t cnt = res[0] < TING_MAX_RES ? res[0] : TING_MAX_RES;
+			for (uint32_t i = 0; i < cnt && !bench; i++) {
+				uint8_t nonce[16], id[32];
+				ting_nonce(w, res[1 + i], nonce);
+				ting_block_id(w.prefix.data(), nonce, id);
+				if (!be_le_target(id, w.target_be)) {
+					/* the GPU compares the top 64 bits only: a candidate can fail the full target */
+					if (be64(id) > w.target64) { g_cpu_bad++; mlog("GPU %d: nonce %s does not validate on the CPU", gpu, tohex(nonce, 16).c_str()); }
+					continue;
+				}
+				ting_submit_share(gpu, w, nonce, id);
+			}
+		}
+	}
+	return true;
+}
+
+static void ting_gpu_thread(int gpu, int slot)
+{
+	while (!g_quit) {
+		if (!ting_gpu_init(gpu) || !ting_gpu_selftest(gpu)) { mlog("GPU %d: disabled", gpu); ting_free(gpu); break; }
+		mlog("GPU %d: mining ting", gpu);
+		g_stat[gpu].alive = true;
+		const bool ok = ting_gpu_mine(gpu, slot);
+		g_stat[gpu].alive = false;
+		ting_free(gpu);
+		if (ok) break;   /* quit */
+		mlog("GPU %d: CUDA error, the miner exits to be restarted (last pool messages, unix s mod 1e5:%s)", gpu, ev_dump().c_str());
+		g_cuda_fatal = true;
+		g_quit = true;
+		break;
+	}
+}
+
 static void gpu_thread(int gpu, int slot)
 {
+	if (g_cfg.algo == ALGO_TING) { ting_gpu_thread(gpu, slot); return; }
 	if (g_cfg.algo == ALGO_LYRA2V2) { l2_gpu_thread(gpu, slot); return; }
 	if (g_cfg.algo == ALGO_NEOSCRYPT) { ns_gpu_thread(gpu, slot); return; }
 	int kv = -1;
@@ -1623,19 +1902,27 @@ static bool cpu_reference_ok()
 	for (int i = 0; i < 32; i++) nr[i] = nd[31 - i];
 	const bool n2 = tohex(nr, 32) == NS_REF_POWHASH;
 	mlog("CPU reference neoscrypt: Feathercoin block hash %s, proof-of-work hash %s", n1 ? "OK" : "WRONG", n2 ? "OK" : "WRONG");
-	return g1 && g2 && t1 && m1 && s1 && b1 && p1 && r1 && n1 && n2;
+	/* ting / Daler: BlockId of Ting block 35104 */
+	uint8_t th[TING_HEADER_SIZE], tid[32];
+	unhex(TING_REF_HEADER, th, TING_HEADER_SIZE);
+	ting_block_id(th, th + TING_NONCE_OFFSET, tid);
+	const bool k1 = tohex(tid, 32) == TING_REF_ID;
+	mlog("CPU reference ting: Ting block 35104 BlockId %s", k1 ? "OK" : "WRONG");
+	return g1 && g2 && t1 && m1 && s1 && b1 && p1 && r1 && n1 && n2 && k1;
 }
 
 static void usage()
 {
 	fprintf(stderr,
 	        MINER_NAME " " GOSTMINER_VERSION " - GPU miner for NVIDIA, no dev fee\n"
-	        "usage: crypto-connection-miner [--algo gostd|lyra2v2|neoscrypt] [--gpus 0,1] [--kernel N] [--intensity N]\n"
+	        "usage: crypto-connection-miner [--algo gostd|lyra2v2|neoscrypt|ting] [--gpus 0,1] [--kernel N] [--intensity N]\n"
 	        "                               [--stats S] [--log FILE] [--selftest] [--bench S]\n"
-	        "  --algo : gostd (GOSTcoin, default), lyra2v2 (Bitmark) or neoscrypt (Feathercoin)\n"
+	        "  --algo : gostd (GOSTcoin, default), lyra2v2 (Bitmark), neoscrypt (Feathercoin) or ting (Daler)\n"
 	        "  solo : [--conf FILE] [--host IP] [--port N] [--refresh S]   (getwork on the local GOSTcoin wallet, gostd)\n"
-	        "  pool : --pool HOST:PORT --user ADDRESS.WORKER [--pass X]      (stratum)\n"
-	        "         --user alone: Crypto Connection pool, " DEFAULT_POOL_HOST " port 4033 (gostd) / 4043 (lyra2v2) / 4063 (neoscrypt)\n");
+	        "  pool : --pool HOST:PORT --user ADDRESS.WORKER [--pass X]      (stratum; ting: the user is your Ting account,\n"
+	        "         64 hex digits)\n"
+	        "         --user alone: Crypto Connection pool, " DEFAULT_POOL_HOST " port 4033 (gostd) / 4043 (lyra2v2) / 4063 (neoscrypt)\n"
+	        "         / 4073 (ting)\n");
 }
 
 int main(int argc, char **argv)
@@ -1649,6 +1936,7 @@ int main(int argc, char **argv)
 			if (v == "gostd" || v == "gost" || v == "gostcoin" || v == "gst") g_cfg.algo = ALGO_GOSTD;
 			else if (v == "lyra2v2" || v == "lyra2rev2" || v == "lyra2re2" || v == "bitmark" || v == "marks") g_cfg.algo = ALGO_LYRA2V2;
 			else if (v == "neoscrypt" || v == "feathercoin" || v == "ftc") g_cfg.algo = ALGO_NEOSCRYPT;
+			else if (v == "ting" || v == "daler" || v == "dlr") g_cfg.algo = ALGO_TING;
 			else { fprintf(stderr, "unknown algorithm %s\n", v.c_str()); usage(); return 1; }
 		}
 		else if (a == "--intensity" || a == "-i") g_cfg.intensity = atoi(next());
@@ -1678,11 +1966,12 @@ int main(int argc, char **argv)
 	if (!g_cfg.pool() && g_cfg.conf.empty() && !g_cfg.worker.empty() && !g_cfg.bench && !g_cfg.selftest) {
 		g_cfg.pool_host = DEFAULT_POOL_HOST;
 		g_cfg.pool_port = g_cfg.algo == ALGO_LYRA2V2 ? DEFAULT_POOL_PORT_LYRA2V2 :
-		                  g_cfg.algo == ALGO_NEOSCRYPT ? DEFAULT_POOL_PORT_NEOSCRYPT : DEFAULT_POOL_PORT_GOSTD;
+		                  g_cfg.algo == ALGO_NEOSCRYPT ? DEFAULT_POOL_PORT_NEOSCRYPT :
+		                  g_cfg.algo == ALGO_TING ? DEFAULT_POOL_PORT_TING : DEFAULT_POOL_PORT_GOSTD;
 	}
 	if (g_cfg.pool() && (g_cfg.pool_port <= 0 || g_cfg.worker.empty())) { usage(); return 1; }
 	if (!g_cfg.logfile.empty()) g_log = fopen(g_cfg.logfile.c_str(), "a");
-	mlog("%s %s - GPU miner for NVIDIA (gostd: GOSTcoin, lyra2v2: Bitmark, neoscrypt: Feathercoin), no dev fee, algorithm %s, %s mode",
+	mlog("%s %s - GPU miner for NVIDIA (gostd: GOSTcoin, lyra2v2: Bitmark, neoscrypt: Feathercoin, ting: Daler), no dev fee, algorithm %s, %s mode",
 	     MINER_NAME, GOSTMINER_VERSION, algo_name(g_cfg.algo), g_cfg.bench ? "bench" : g_cfg.pool() ? "pool" : "solo");
 	if (g_cfg.algo != ALGO_GOSTD && !g_cfg.pool() && !g_cfg.bench && !g_cfg.selftest) {
 		mlog("%s: pool mode only (--pool HOST:PORT --user ADDRESS.WORKER)", algo_name(g_cfg.algo));
@@ -1707,6 +1996,7 @@ int main(int argc, char **argv)
 		for (int g : g_cfg.gpus) {
 			if (g_cfg.algo == ALGO_LYRA2V2) { ok = l2_gpu_init(g) && l2_gpu_selftest(g) && ok; l2_free(g); }
 			else if (g_cfg.algo == ALGO_NEOSCRYPT) { ok = ns_gpu_init(g) && ns_gpu_selftest(g) && ok; ns_free(g); }
+			else if (g_cfg.algo == ALGO_TING) { ok = ting_gpu_init(g) && ting_gpu_selftest(g) && ok; ting_free(g); }
 			else { int grids[NKERNELS]; ok = gpu_init(g, grids) && gpu_selftest(g) && ok; }
 		}
 		mlog(ok ? "SELF TEST OK" : "SELF TEST FAILED");

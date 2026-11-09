@@ -1,16 +1,20 @@
-Crypto Connection Miner 0.6.0 - mineur GPU multi-coins pour NVIDIA. Sans frais de développeur. (S'appelait
+Crypto Connection Miner 0.7.0 - mineur GPU multi-coins pour NVIDIA. Sans frais de développeur. (S'appelait
 GostMiner jusqu'à la 0.4.0.)
   --algo gostd     (par défaut)  GOSTcoin (GST)
   --algo lyra2v2                 Bitmark (MARKS) et autres coins Lyra2REv2
-  --algo neoscrypt               Feathercoin (FTC) et autres coins NeoScrypt (nouveau en 0.6.0)
+  --algo neoscrypt               Feathercoin (FTC) et autres coins NeoScrypt
+  --algo ting                    Daler (DLR) sur Ting (nouveau en 0.7.0) ; l'utilisateur est votre compte Ting
+                                 (64 caractères hexadécimaux)
 
 Cartes NVIDIA de Maxwell (GTX 900) à Blackwell (RTX 50), Windows 10/11 x64 et Linux x86-64 (glibc 2.34 ou plus).
 Pilote : un pilote NVIDIA récent (support CUDA 12.9 pour les cartes les plus récentes).
 
 Le plus simple : modifiez puis lancez start_gostcoin.bat / start_gostcoin.sh (GOSTcoin), start_bitmark.bat /
-start_bitmark.sh (Bitmark) ou start_feathercoin.bat / start_feathercoin.sh (Feathercoin) : mettez votre adresse
-dans ADDRESS. Ils minent sur la pool Crypto Connection (crypto-connection.net, 1 % de frais de pool) et relancent
-le mineur automatiquement. Statistiques : https://crypto-connection.net
+start_bitmark.sh (Bitmark), start_feathercoin.bat / start_feathercoin.sh (Feathercoin) : mettez votre adresse
+dans ADDRESS, ou start_daler.bat / start_daler.sh (Daler) : mettez votre compte Ting dans ACCOUNT. Ils minent sur la
+pool Crypto Connection (crypto-connection.net, 1 % de frais de pool) et relancent le mineur automatiquement. Un
+compte Ting se crée avec l'appli Android Ting ID (github.com/ting-organization/ting-id) ou avec « ting wallet
+create » (github.com/ting-organization/ting-miner). Statistiques : https://crypto-connection.net
 
 Ligne de commande :
   GOSTcoin, Windows : crypto-connection-miner.exe --user VOTRE_ADRESSE_GST.rig1
@@ -19,23 +23,25 @@ Ligne de commande :
   Bitmark,  Linux :   ./crypto-connection-miner --algo lyra2v2 --user VOTRE_ADRESSE_MARKS.rig1
   Feathercoin, Windows : crypto-connection-miner.exe --algo neoscrypt --user VOTRE_ADRESSE_FTC.rig1
   Feathercoin, Linux :   ./crypto-connection-miner --algo neoscrypt --user VOTRE_ADRESSE_FTC.rig1
+  Daler, Windows :       crypto-connection-miner.exe --algo ting --user VOTRE_COMPTE_TING.rig1
+  Daler, Linux :         ./crypto-connection-miner --algo ting --user VOTRE_COMPTE_TING.rig1
   Avec --user et sans --pool, le mineur se connecte à la pool Crypto Connection : crypto-connection.net port 4033
-  (GOSTcoin), 4043 (Bitmark) ou 4063 (Feathercoin). Toute autre pool stratum : ajoutez --pool HOTE:PORT
-  (et --pass x).
+  (GOSTcoin), 4043 (Bitmark), 4063 (Feathercoin) ou 4073 (Daler). Toute autre pool stratum : ajoutez --pool HOTE:PORT
+  (et --pass x) ; pour Ting, la pool doit parler le stratum Crypto Connection pour Ting (README.fr.md).
 
-Options : --algo (gostd, lyra2v2 ou neoscrypt), --pool HOTE:PORT, --user ADRESSE.WORKER (--pass d=64 demande une
+Options : --algo (gostd, lyra2v2, neoscrypt ou ting), --pool HOTE:PORT, --user ADRESSE.WORKER (--pass d=64 demande une
 difficulté fixe à la pool), --gpus 0,1,2 (cartes), --kernel N (gostd : variante forcée ; par défaut chaque carte mesure les
 5 variantes 3 s et garde la plus rapide), --intensity N (lyra2v2 : 2^N hashs par lancement ; par défaut 22 jusqu'à
 20 SM, 23-24 au-delà, limité par la mémoire de la carte ; neoscrypt : 2^N hashs par lancement, par défaut 16 jusqu'à
 20 SM, 17-18 au-delà, environ 33 Ko de mémoire de carte par hash ; vitesse affichée en kH/s), --stats S,
---log FICHIER, --selftest (test.bat / test.sh testent les trois algos), --bench S.
+--log FICHIER, --selftest (test.bat / test.sh testent les quatre algos), --bench S.
 Solo sur un wallet GOSTcoin local (getwork, gostd) : --conf gostcoin.conf --port 8795.
 
 Contrôles : au démarrage, le mineur vérifie ses références CPU sur de vrais blocs (GOSTcoin : bloc genèse,
 identifiant d'une coinbase, racine merkle ; Bitmark : hash du bloc 2490869, sa preuve de travail lyra2rev2 et sa
-racine merkle ; Feathercoin : hash du bloc 6428900 et sa preuve de travail NeoScrypt). S'il affiche WRONG, ne pas
-miner. L'autotest GPU lyra2v2 doit retrouver le nonce du bloc Bitmark 2490869, celui de neoscrypt le nonce du bloc
-Feathercoin 6428900. Chaque résultat GPU est revérifié sur le CPU avant envoi.
+racine merkle ; Feathercoin : hash du bloc 6428900 et sa preuve de travail NeoScrypt ; Ting : BlockId du bloc 35104).
+S'il affiche WRONG, ne pas miner. L'autotest GPU lyra2v2 doit retrouver le nonce du bloc Bitmark 2490869, celui de
+neoscrypt le nonce du bloc Feathercoin 6428900, celui de ting le nonce du bloc Ting 35104. Chaque résultat GPU est revérifié sur le CPU avant envoi.
 
 Erreurs CUDA : si une carte signale une erreur CUDA, le mineur écrit les derniers messages de la pool dans le log et
 quitte avec le code 3 ; les scripts de lancement le relancent après 5 s.
@@ -45,7 +51,8 @@ Overclocking (gostd) : sur P104-100 / GTX 10xx, un overclock du cœur (+100 ou +
 décalage mémoire ne pose pas de problème) et baissez-le si l'erreur apparaît.
 
 Vitesse typique sur une P104-100 (classe GTX 1070) à 160 W, cœur d'origine : gostd 21-23 MH/s, lyra2v2 36-37 MH/s,
-neoscrypt environ 865 kH/s.
+neoscrypt environ 865 kH/s, ting environ 2,05-2,09 GH/s.
 
-Licence : GNU GPL v3 (les noyaux lyra2v2 et neoscrypt viennent de ccminer), voir NOTICE.txt et COPYING.txt. Code
-source : https://github.com/gacanga/crypto-connection-miner (et CryptoConnectionMiner-v0.6.0-src.tar.gz).
+Licence : GNU GPL v3 (les noyaux lyra2v2 et neoscrypt viennent de ccminer ; le noyau ting a été écrit pour ce
+mineur), voir NOTICE.txt et COPYING.txt. Code source : https://github.com/gacanga/crypto-connection-miner (et
+CryptoConnectionMiner-v0.7.0-src.tar.gz).

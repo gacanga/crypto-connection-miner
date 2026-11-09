@@ -1,11 +1,11 @@
-Crypto Connection Miner 0.6.0 (named GostMiner up to 0.4.0) - multi-coin GPU miner for NVIDIA (gostd: GOSTcoin,
-lyra2v2: Bitmark, neoscrypt: Feathercoin), no dev fee.
+Crypto Connection Miner 0.7.0 (named GostMiner up to 0.4.0) - multi-coin GPU miner for NVIDIA (gostd: GOSTcoin,
+lyra2v2: Bitmark, neoscrypt: Feathercoin, ting: Daler), no dev fee.
 Copyright (c) 2026 Crypto Connection Miner authors.
 
 Crypto Connection Miner is free software: you can redistribute it and/or modify it under the terms of the GNU General
 Public License version 3 as published by the Free Software Foundation (see COPYING.txt). It is distributed WITHOUT
 ANY WARRANTY. The complete source code of this release is published at https://github.com/gacanga/crypto-connection-miner
-and next to the binaries (CryptoConnectionMiner-v0.6.0-src.tar.gz on the downloads page of crypto-connection.net).
+and next to the binaries (CryptoConnectionMiner-v0.7.0-src.tar.gz on the downloads page of crypto-connection.net).
 
 Why GPL-3: the lyra2v2 and neoscrypt GPU kernels come from ccminer 2.3.1 (tpruvot, GPL-3), as improved in MYMINER.
 
@@ -21,3 +21,4 @@ Third-party code:
 - src/lyra2ref (CPU check of lyra2rev2): Lyra2 reference by the Lyra PHC team (public domain); sphlib
   BLAKE / Keccak / CubeHash / Skein / BMW (MIT); lyra2re2 as in MiningCore libmultihash (MIT).
 - src/sha256.c: Crypto Connection Miner authors.
+- gpu/ting (Ting proof of work, SHA-256 from a midstate): Crypto Connection Miner authors (2026), GNU GPL v3.
