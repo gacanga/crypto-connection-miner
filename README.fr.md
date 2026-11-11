@@ -10,10 +10,12 @@ version 0.4.0 : https://github.com/gacanga/GostMiner.)
 | Lyra2REv2 | `--algo lyra2v2` | Bitmark (MARKS) et autres coins Lyra2REv2 | 4043 |
 | NeoScrypt | `--algo neoscrypt` | Feathercoin (FTC) et autres coins NeoScrypt | 4063 |
 | Ting (SHA-256 sur l'en-tête balisé de Ting) | `--algo ting` | Daler (DLR) et autres coins de Ting | 4073 |
-| Equihash 192,7 (« ZcashPoW ») | `--algo equihash192` | Ycash (YEC) | 4053 |
+| Equihash 192,7 (« ZcashPoW ») | `--algo equihash192` | Ycash (YEC) | (pool fermée le 10/11/2026 : utilisez `--pool`) |
+| Ethash (époques de 30000 blocs) | `--algo ethash` | NEX Chain (NEXC) et autres chaînes Ethash | 4083 |
 
 - Cartes NVIDIA de Maxwell (GTX 900) à Blackwell (RTX 50), Windows 10/11 x64 et Linux x86-64 (glibc 2.34 ou plus).
-  equihash192 demande environ 5,4 Go de mémoire par carte (cartes de 6 Go ou plus).
+  equihash192 demande environ 5,4 Go de mémoire par carte (cartes de 6 Go ou plus) ; ethash garde le DAG de l'époque
+  en cours dans la mémoire du GPU (environ 1 Go sur NEX Chain en novembre 2026, +8 Mo tous les 30000 blocs).
 - Mine par défaut sur la pool Crypto Connection ; toute pool stratum de ces coins fonctionne avec `--pool` (Ting : une
   pool qui parle le stratum décrit plus bas). Minage solo possible sur un wallet GOSTcoin local (getwork).
 - Chaque part trouvée par le GPU est revérifiée sur le CPU avant envoi ; les références CPU sont contrôlées sur de
@@ -28,8 +30,8 @@ SHA-256. Les mêmes fichiers sont sur la [page Téléchargements](https://crypto
 
 | Fichier | SHA-256 |
 |---|---|
-| CryptoConnectionMiner-v0.8.0-win64-cuda12.zip | `bc939f2f8f3d8feec027f95144fddc64a0c1ac83e6d80c2992e4fa71402ba6e4` |
-| CryptoConnectionMiner-v0.8.0-linux-x64-cuda12.tar.gz | `d4e954063e83f1cc6f3fc43f8e831a0fa4fa8a6689124d60c31f2993e5ff8afa` |
+| CryptoConnectionMiner-v0.9.0-win64-cuda12.zip | `78d1f6d2c65dadfe4dcb05c1ebe49dbcf09407ac22de6b833f0078784d9fbae5` |
+| CryptoConnectionMiner-v0.9.0-linux-x64-cuda12.tar.gz | `27c7e740f715ffc77f64eba647fb057e8be1b50292012ef0a01c1f3cafc3b331` |
 
 Vérifiez un fichier avant de le lancer : Windows (PowerShell) `Get-FileHash FICHIER -Algorithm SHA256`, Linux
 `sha256sum FICHIER`.
@@ -38,14 +40,15 @@ Vérifiez un fichier avant de le lancer : Windows (PowerShell) `Get-FileHash FIC
 
 Le plus simple : ouvrez `start_gostcoin.bat` / `start_gostcoin.sh` (GOSTcoin), `start_bitmark.bat` /
 `start_bitmark.sh` (Bitmark), `start_feathercoin.bat` / `start_feathercoin.sh` (Feathercoin), `start_daler.bat` /
-`start_daler.sh` (Daler : mettez votre compte Ting dans `ACCOUNT`) ou `start_ycash.bat` / `start_ycash.sh` (Ycash :
-une adresse transparente, s1...), mettez votre adresse dans `ADDRESS`, puis lancez-le. Il mine sur la pool Crypto
+`start_daler.sh` (Daler : mettez votre compte Ting dans `ACCOUNT`) ou `start_nexchain.bat` / `start_nexchain.sh`
+(NEX Chain : une adresse 0x...), mettez votre adresse dans `ADDRESS`, puis lancez-le. Il mine sur la pool Crypto
 Connection et relance le mineur automatiquement. Suivez votre hashrate, votre solde et vos paiements sur
 https://crypto-connection.net (Mes stats).
 
 En ligne de commande : avec `--user` et sans `--pool`, le mineur se connecte à la pool Crypto Connection
-(crypto-connection.net, port 4033 pour GOSTcoin, 4043 pour Bitmark, 4063 pour Feathercoin, 4073 pour Daler, 4053 pour
-Ycash).
+(crypto-connection.net, port 4033 pour GOSTcoin, 4043 pour Bitmark, 4063 pour Feathercoin, 4073 pour Daler, 4083 pour
+NEX Chain). La pool Ycash de Crypto Connection a fermé le 10/11/2026 : pour Ycash, indiquez `--pool` avec une autre
+pool Ycash.
 
 ```
 GOSTcoin, Windows :  crypto-connection-miner.exe --user VOTRE_ADRESSE_GST.rig1
@@ -56,12 +59,13 @@ Feathercoin, Windows : crypto-connection-miner.exe --algo neoscrypt --user VOTRE
 Feathercoin, Linux :   ./crypto-connection-miner --algo neoscrypt --user VOTRE_ADRESSE_FTC.rig1
 Daler, Windows :     crypto-connection-miner.exe --algo ting --user VOTRE_COMPTE_TING.rig1
 Daler, Linux :       ./crypto-connection-miner --algo ting --user VOTRE_COMPTE_TING.rig1
-Ycash, Windows :     crypto-connection-miner.exe --algo equihash192 --user VOTRE_ADRESSE_YEC.rig1
-Ycash, Linux :       ./crypto-connection-miner --algo equihash192 --user VOTRE_ADRESSE_YEC.rig1
+NEX Chain, Windows : crypto-connection-miner.exe --algo ethash --user VOTRE_ADRESSE_NEXC.rig1
+NEX Chain, Linux :   ./crypto-connection-miner --algo ethash --user VOTRE_ADRESSE_NEXC.rig1
+Ycash (autre pool) : crypto-connection-miner.exe --algo equihash192 --pool HOTE:PORT --user VOTRE_ADRESSE_YEC.rig1
 Autre pool :         crypto-connection-miner.exe --pool HOTE:PORT --user VOTRE_ADRESSE.rig1 --pass x
 ```
 
-`test.bat` / `test.sh` testent chaque carte sur les cinq algorithmes.
+`test.bat` / `test.sh` testent chaque carte sur les six algorithmes.
 
 Un compte Ting (paiements en Daler) fait 64 caractères hexadécimaux : créez-le avec l'appli Android Ting ID
 (https://github.com/ting-organization/ting-id) ou avec `ting wallet create` de ting-miner
@@ -70,12 +74,15 @@ Un compte Ting (paiements en Daler) fait 64 caractères hexadécimaux : créez-l
 Les paiements en Ycash vont sur une adresse transparente (s1...) : YecWallet ou ycashd
 (https://github.com/ycashfoundation).
 
+Une adresse NEX Chain est une adresse de type Ethereum 0x... : le wallet NEX (https://getnexwallet.com) ou MetaMask
+avec le réseau NEX Chain (RPC https://rpc.getnexwallet.com, chain ID 6396).
+
 ## Options
 
 | Option | Rôle |
 |---|---|
-| `--algo A` | `gostd` (GOSTcoin, par défaut), `lyra2v2` (Bitmark), `neoscrypt` (Feathercoin), `ting` (Daler) ou `equihash192` (Ycash) |
-| `--pool HOTE:PORT` | pool stratum (par défaut avec `--user` : crypto-connection.net, port 4033 gostd / 4043 lyra2v2 / 4063 neoscrypt / 4073 ting / 4053 equihash192) |
+| `--algo A` | `gostd` (GOSTcoin, par défaut), `lyra2v2` (Bitmark), `neoscrypt` (Feathercoin), `ting` (Daler), `equihash192` (Ycash) ou `ethash` (NEX Chain) |
+| `--pool HOTE:PORT` | pool stratum (par défaut avec `--user` : crypto-connection.net, port 4033 gostd / 4043 lyra2v2 / 4063 neoscrypt / 4073 ting / 4083 ethash) |
 | `--user ADRESSE.WORKER --pass x` | votre adresse de paiement et un nom de worker ; `--pass d=64` demande une difficulté fixe à la pool |
 | `--gpus 0,1,2` | cartes utilisées (par défaut : toutes) |
 | `--kernel N` | gostd : variante de noyau forcée (par défaut, chaque carte mesure les 5 variantes 3 s et garde la plus rapide) |
@@ -93,10 +100,12 @@ Au démarrage, le mineur vérifie ses références CPU sur de vrais blocs : bloc
 coinbase et racine merkle ; hash du bloc Bitmark 2490869, sa preuve de travail lyra2rev2 et sa racine merkle ; hash
 du bloc Feathercoin 6428900 et sa preuve de travail NeoScrypt ; BlockId du bloc Ting 35104 ; pour Ycash, réponses
 connues du BLAKE2b « ZcashPoW » et 6 vrais blocs Ycash (solution minée valide, hash du bloc recalculé, solutions
-altérées refusées). S'il affiche `WRONG`, ne minez pas. L'autotest GPU lyra2v2 doit retrouver le nonce du bloc Bitmark
+altérées refusées) ; avec `--algo ethash`, réponses connues de keccak, tailles du cache et du DAG des tables de
+go-ethereum et 2 vrais blocs NEX Chain (mix digest et résultat). S'il affiche `WRONG`, ne minez pas. L'autotest GPU lyra2v2 doit retrouver le nonce du bloc Bitmark
 2490869, celui de neoscrypt le nonce du bloc Feathercoin 6428900, celui de ting le nonce du bloc Ting 35104, celui
 d'equihash192 exactement les solutions de référence de 5 en-têtes (3 d'un vrai job de pool, 2 vrais blocs Ycash dont
-la solution minée doit être retrouvée).
+la solution minée doit être retrouvée), celui d'ethash le nonce du bloc NEX Chain 30001 avec un DAG construit sur le
+GPU, et chaque candidat de 16 lancements à cible facile doit être validé sur le CPU.
 
 ## Erreurs CUDA et overclocking
 
@@ -112,7 +121,8 @@ si l'erreur apparaît.
 Vitesse typique sur une P104-100 (classe GTX 1070) à 160 W, cœur d'origine : gostd 21-23 MH/s, lyra2v2 36-37 MH/s,
 neoscrypt environ 865 kH/s (le mineur affiche les vitesses neoscrypt en kH/s), ting environ 2,05-2,09 GH/s (affichés
 2050-2090 MH/s), equihash192 environ 11 à 15 Sol/s selon la fréquence mémoire (solutions valides par
-seconde).
+seconde). Ethash est limité par la mémoire : environ 32 MH/s avec la mémoire à +700 MHz (5702 MHz) et 18 MH/s avec la
+mémoire baissée à 2999 MHz (la carte ne consomme que 55 à 60 W).
 
 ## Stratum Ting (Daler)
 
@@ -145,10 +155,27 @@ Stratum (style Zcash, comme Miningcore et NOMP) : `mining.subscribe` -> `[sessio
 l'en-tête) ; le nonce de 32 octets est EXTRANONCE1 || EXTRANONCE2 (emplacement GPU, session, compteur) ;
 `mining.submit` `[worker, job, heure, EXTRANONCE2, "fd9001" + solution]`.
 
+## Ethash (NEX Chain)
+
+Ethash tel que go-ethereum / core-geth le calculent, époques de 30000 blocs : le mineur trouve l'époque à partir du
+seed hash du job, construit le cache de l'époque sur le CPU (environ 2 s), chaque GPU en tire le DAG (environ 20 à 30 s
+pour 1 Go sur une P104-100), puis chaque nonce coûte un keccak512, 64 accès à des pages de 128 octets du DAG (8 threads
+par hash, une lecture groupée par page) et un keccak256. Les noyaux (`gpu/ethash`) et la référence CPU
+(`src/ethash_ref.c`) ont été écrits pour ce mineur. Chaque candidat est vérifié sur le CPU (Ethash « light » à partir
+du cache) contre la cible complète de la part.
+
+Stratum : EthereumStratum/1.0.0 (NiceHash), comme Miningcore le sert : `mining.subscribe` `[agent,
+"EthereumStratum/1.0.0"]` -> `[[...], EXTRANONCE1]` ; `mining.notify` `[job, seed hash, header hash, clean]` ;
+`mining.set_difficulty` `[d]` - cible d'une part = 2^224 / d (difficulté 1 = 2^32 hashs) ; le nonce de 8 octets est
+EXTRANONCE1 || partie du mineur (emplacement GPU, compteur, 32 bits parcourus par le GPU) ; `mining.submit` `[worker,
+job, partie du mineur (hex, sans EXTRANONCE1)]`. `mining.set_extranonce` est pris en charge.
+
 ## Compilation
 
 - Windows : CUDA 12.9 et Visual Studio 2022 (outils C++), puis `windows\build_miner.bat dev\crypto-connection-miner.exe`.
 - Linux : CUDA 12.9 (`CUDA_HOME`) et gcc / g++ 11 ou plus, puis `linux/build_linux.sh dev/crypto-connection-miner`.
+  Le binaire publié est compilé avec gcc-11 / g++-11 (utilisés s'ils sont installés) et `linux/glibc_compat.c`, pour
+  tourner sur glibc 2.34 et plus même s'il est compilé sur un système plus récent.
 - Code machine pour toutes les générations de GPU visées par CUDA 12.9 (sm_50 à sm_120) plus PTX ; `GM_ARCHS` permet
   d'en compiler moins, par exemple `GM_ARCHS=-arch=sm_61`.
 - Les références C doivent être compilées avec `-fno-strict-aliasing` : Lyra2.c enfreint les règles d'aliasing du C
@@ -157,6 +184,12 @@ l'en-tête) ; le nonce de 32 octets est EXTRANONCE1 || EXTRANONCE2 (emplacement 
 
 ## Changements
 
+- 0.9.0 : nouvel algorithme `--algo ethash` pour NEX Chain (NEXC) et les autres chaînes Ethash : DAG construit sur le
+  GPU, noyau de recherche à 8 threads par hash, référence CPU écrite pour ce mineur ; EthereumStratum/1.0.0
+  (ci-dessus) ; port de pool 4083 par défaut ; scripts `start_nexchain` ; `test` vérifie les six algorithmes ;
+  contrôles CPU sur 2 vrais blocs NEX Chain, autotest GPU sur le bloc NEX Chain 30001. La pool Ycash de Crypto
+  Connection a fermé le 10/11/2026 : les scripts `start_ycash` ne sont plus dans les paquets (`--algo equihash192`
+  reste, avec `--pool`). Autres algorithmes inchangés.
 - 0.8.0 : nouvel algorithme `--algo equihash192` pour Ycash (YEC) : Equihash 192,7 « ZcashPoW » avec le solveur de
   YecMiner (Apache-2.0), environ 11 à 15 Sol/s sur une P104-100, environ 5,4 Go de mémoire par carte ; stratum de
   style Zcash (ci-dessus) ; port de pool 4053 par défaut ; option `--tpb` ; scripts `start_ycash` ; `test` vérifie les
@@ -178,5 +211,6 @@ l'en-tête) ; le nonce de 32 octets est EXTRANONCE1 || EXTRANONCE2 (emplacement 
 ## Licence
 
 GNU GPL v3 (`LICENSE`, `COPYING.txt`) : les noyaux GPU lyra2v2 et neoscrypt viennent de ccminer 2.3.1 ; le noyau
-ting (`gpu/ting`) a été écrit pour ce mineur ; le solveur equihash192 (`gpu/equihash192`) vient de YecMiner, même
+ting (`gpu/ting`), les noyaux ethash (`gpu/ethash`) et la référence CPU d'Ethash (`src/ethash_ref.c`) ont été
+écrits pour ce mineur ; le solveur equihash192 (`gpu/equihash192`) vient de YecMiner, même
 auteur, Apache-2.0 (compatible avec la GPL v3). Le code tiers et ses licences sont listés dans `NOTICE.txt`.
