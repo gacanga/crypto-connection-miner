@@ -1,5 +1,5 @@
 /*
- * gostminer.cu - Crypto Connection Miner 0.9 (named GostMiner up to 0.4): multi-coin GPU miner for NVIDIA, no dev fee.
+ * gostminer.cu - Crypto Connection Miner 0.10 (named GostMiner up to 0.4): multi-coin GPU miner for NVIDIA, no dev fee.
  *   --algo gostd     (default) GOSTcoin (GST): gostd = GOST R 34.11-2012-256( GOST R 34.11-2012-512( 80-byte header ) )
  *   --algo lyra2v2   Bitmark (MARKS) and other Lyra2REv2 coins: blake256 > keccak256 > cubehash256 > Lyra2(1,4,4) >
  *                    skein256 > cubehash256 > bmw256 (kernels of MYMINER / ccminer 2.3.1 in gpu/lyra2v2, GPL-3)
@@ -13,6 +13,9 @@
  *   --algo ethash    NEX Chain (NEXC) and other Ethash chains (epochs of 30000 blocks): DAG built on the GPU from the
  *                    cache (about 1 GB at NEX Chain epoch 1), keccak512 > 64 DAG accesses (8 threads per hash) >
  *                    keccak256 (gpu/ethash, written for this miner; CPU reference src/ethash_ref.c) - since 0.9.0
+ *   --algo chc       Chipcoin (CHC): SHA-256d of a Bitcoin-style 80-byte header, the digest read as a BIG-endian
+ *                    integer (first bytes zero; Bitcoin ASICs cannot mine it); midstate + 3 rounds on the host, two
+ *                    compressions per attempt on the GPU (gpu/chc) - since 0.10.0
  * Solo on a local GOSTcoin wallet (RPC getwork, gostd only) or on a stratum pool (MiningCore).
  * NVIDIA GPUs from Maxwell (sm_50) to Blackwell (sm_120), Windows and Linux.
  *
@@ -41,18 +44,22 @@
  *               alone: target = 0x0007ffff..ff / difficulty); nonce (32 bytes) = extranonce1 || extranonce2, the
  *               miner fills extranonce2 with GPU slot, session and counter; submit [worker, job, time, extranonce2,
  *               "fd9001" + solution (400 bytes)].
+ *      chc    : Bitcoin stratum (coinbase, merkle and header as lyra2v2); the coinbase is a Chipcoin transaction whose
+ *               locktime holds extranonce1 (2 bytes) || extranonce2 (2 bytes: GPU slot 4 bits + counter 12 bits);
+ *               share target = diff1 / difficulty, compared with the digest read big-endian.
  *      ethash : EthereumStratum/1.0.0 (NiceHash; MiningCore): subscribe [agent, "EthereumStratum/1.0.0"] ->
  *               [[...], extranonce1]; notify [job, seed hash, header hash, clean]: the epoch is found from the seed
  *               hash; share target = 2^224 / difficulty; nonce = extranonce1 || GPU slot || counter || 32 bits scanned
  *               by the GPU; submit [worker, job, nonce without extranonce1 (hex)]. The user is your 0x... address.
  *
- * Usage: crypto-connection-miner.exe [--algo gostd|lyra2v2|neoscrypt|ting|equihash192|ethash] [--gpus 0,1,2] [--kernel N] [--intensity N]
+ * Usage: crypto-connection-miner.exe [--algo gostd|lyra2v2|neoscrypt|ting|equihash192|ethash|chc] [--gpus 0,1,2] [--kernel N] [--intensity N]
  *          [--tpb N] [--stats 30] [--log <file>]
  *          [--selftest] [--bench S]
  *          solo: [--conf <gostcoin.conf>] [--host 127.0.0.1] [--port N] [--refresh 10]
  *          pool: --pool <host>:<port> --user <address>.<worker> [--pass x]
  *          --user without --pool and without --conf: the Crypto Connection pool, crypto-connection.net port 4033
- *          (gostd), 4043 (lyra2v2), 4063 (neoscrypt), 4073 (ting), 4053 (equihash192) or 4083 (ethash, NEX Chain).
+ *          (gostd), 4043 (lyra2v2), 4063 (neoscrypt), 4073 (ting), 4053 (equihash192), 4083 (ethash, NEX Chain) or
+ *          4093 (chc, Chipcoin).
  *   --kernel N (gostd): table placement variant (0 maxw 3 blocks/SM, 1 mix34 3 blocks/SM, 2 maxw 4 blocks/SM + shared
  *   stash, 3 shared 2 blocks/SM, 4 maxw 2 blocks/SM); by default each GPU measures every variant for 3 s at start-up
  *   and keeps the fastest (the best one depends on the GPU generation and clocks).
@@ -67,7 +74,7 @@
  *   on Windows, ~/.gostcoin/gostcoin.conf on Linux); they are never printed.
  * Build: windows\build_miner.bat [output exe] (CUDA 12.9 + Visual Studio 2022) or linux/build_linux.sh (CUDA 12.9),
  *   static CUDA runtime, code for sm_50 sm_52 sm_60 sm_61 sm_70 sm_75 sm_80 sm_86 sm_89 sm_90 sm_100 sm_120 + PTX.
- * Licence: GPL-3 (the lyra2v2 and neoscrypt kernels come from ccminer, GPL-3); gostd and ting code: see LICENSE / README;
+ * Licence: GPL-3 (the lyra2v2 and neoscrypt kernels come from ccminer, GPL-3); gostd, ting and chc code: see LICENSE / README;
  *   gpu/equihash192: Apache-2.0 (YecMiner), see gpu/equihash192/NOTICE-YecMiner.txt; gpu/ethash and src/ethash_ref.c:
  *   written for this miner (GPL-3 with the rest of the miner).
  */
@@ -130,8 +137,9 @@ static void sleep_ms(unsigned ms) { usleep((useconds_t)ms * 1000); }
 #include "equihash192/eq_vectors.h"
 #include "ethash/ethash_gpu.h"
 #include "ethash_ref.h"
+#include "chc/chc_gpu.h"
 
-#define GOSTMINER_VERSION "0.9.0"
+#define GOSTMINER_VERSION "0.10.0"
 #define MINER_NAME "Crypto Connection Miner"
 /* default pool when only --user is given: the Crypto Connection pool (crypto-connection.net) */
 #define DEFAULT_POOL_HOST "crypto-connection.net"
@@ -141,6 +149,7 @@ static void sleep_ms(unsigned ms) { usleep((useconds_t)ms * 1000); }
 #define DEFAULT_POOL_PORT_TING 4073
 #define DEFAULT_POOL_PORT_EQ192 4053
 #define DEFAULT_POOL_PORT_ETHASH 4083
+#define DEFAULT_POOL_PORT_CHC 4093
 
 /* receive / send time-outs of a socket, in milliseconds */
 static void sock_timeouts(SOCKET s, int rcv_ms, int snd_ms)
@@ -280,11 +289,11 @@ __global__ void __launch_bounds__(256, 1) k_dump(uint32_t start, uint32_t n, uin
 /* ------------------------------------------------------------------------------------------------
  * configuration
  * ---------------------------------------------------------------------------------------------- */
-enum algo_t { ALGO_GOSTD = 0, ALGO_LYRA2V2 = 1, ALGO_NEOSCRYPT = 2, ALGO_TING = 3, ALGO_EQ192 = 4, ALGO_ETHASH = 5 };
+enum algo_t { ALGO_GOSTD = 0, ALGO_LYRA2V2 = 1, ALGO_NEOSCRYPT = 2, ALGO_TING = 3, ALGO_EQ192 = 4, ALGO_ETHASH = 5, ALGO_CHC = 6 };
 static const char *algo_name(algo_t a)
 {
 	return a == ALGO_LYRA2V2 ? "lyra2v2" : a == ALGO_NEOSCRYPT ? "neoscrypt" : a == ALGO_TING ? "ting" :
-	       a == ALGO_EQ192 ? "equihash192" : a == ALGO_ETHASH ? "ethash" : "gostd";
+	       a == ALGO_EQ192 ? "equihash192" : a == ALGO_ETHASH ? "ethash" : a == ALGO_CHC ? "chc" : "gostd";
 }
 
 struct config {
@@ -558,6 +567,11 @@ static bool cpu_check(const work &w, uint32_t nonce, uint8_t digest[32])
 		neoscrypt(digest, hdr, NEOSCRYPT_PROFILE);
 		return le_hash_le_target(digest, w.target);
 	}
+	if (g_cfg.algo == ALGO_CHC) {
+		/* Chipcoin: sha256d, the digest read big-endian (consensus/hashes.py hash_to_int) */
+		gm_sha256d(hdr, 80, digest);
+		return digest_le_target(digest, w.target);
+	}
 	gostd_ref(hdr, digest);
 	return digest_le_target(digest, w.target);
 }
@@ -565,7 +579,7 @@ static bool cpu_check(const work &w, uint32_t nonce, uint8_t digest[32])
 /* digest of a checked nonce <= little-endian target (block candidate test) */
 static bool algo_meets(const uint8_t digest[32], const uint8_t target[32])
 {
-	return g_cfg.algo != ALGO_GOSTD ? le_hash_le_target(digest, target) : digest_le_target(digest, target);
+	return g_cfg.algo != ALGO_GOSTD && g_cfg.algo != ALGO_CHC ? le_hash_le_target(digest, target) : digest_le_target(digest, target);
 }
 
 static bool submit_solo(const work &w, uint32_t nonce)
@@ -1198,7 +1212,9 @@ static bool pool_work(int slot, uint32_t &en2ctr, work &w)
 	}
 	if (en2size < 1 || en2size > 16) en2size = 4;
 	std::vector<uint8_t> en2((size_t)en2size, 0);
-	const uint64_t v = ((uint64_t)(slot & 0xFF) << 24) | (en2ctr++ & 0xFFFFFF);
+	/* 2-byte extranonce2 (Chipcoin pool): GPU slot in the top 4 bits, counter in the low 12 */
+	const uint64_t v = en2size == 2 ? (((uint64_t)(slot & 0xF) << 12) | (en2ctr++ & 0xFFF))
+	                                : (((uint64_t)(slot & 0xFF) << 24) | (en2ctr++ & 0xFFFFFF));
 	for (int i = 0; i < en2size && i < 8; i++) en2[en2size - 1 - i] = (uint8_t)(v >> (8 * i));
 	std::vector<uint8_t> cb;
 	cb.reserve(j.coinb1.size() + en1.size() + en2.size() + j.coinb2.size());
@@ -1732,6 +1748,157 @@ static void ns_gpu_thread(int gpu, int slot)
 		const bool ok = ns_gpu_mine(gpu, slot);
 		g_stat[gpu].alive = false;
 		ns_free(gpu);
+		if (ok) break;   /* quit */
+		mlog("GPU %d: CUDA error, the miner exits to be restarted (last pool messages, unix s mod 1e5:%s)", gpu, ev_dump().c_str());
+		g_cuda_fatal = true;
+		g_quit = true;
+		break;
+	}
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * chc GPU part (gpu/chc): Chipcoin (CHC)
+ * ---------------------------------------------------------------------------------------------- */
+/* Chipcoin mainnet block 11625 (13/11/2026): its 80-byte header (version, previous hash, merkle root, time, bits,
+ * nonce from the node's /v1/block?height=11625) and its block hash */
+static const char *CHC_REF_HEADER =
+	"010000000000000000277c2d5963ea85b92474b725ee08bd8d8395968e65e4d678357cdd71cc151a7aede43c0e2cacc66a7cb9ca43934fdb"
+	"26e57a2a3e1e47805024bfc39825f76a407e531b5d129956";
+static const char *CHC_REF_HASH = "000000000007f447604c3215afac8d63926ef08b35f31d982bcb58a8075c8c13";
+
+static inline uint32_t chc_bswap32(uint32_t x) { return (x >> 24) | ((x >> 8) & 0xFF00u) | ((x << 8) & 0xFF0000u) | (x << 24); }
+
+static int g_chc_grid[16];
+
+static bool chc_gpu_init(int gpu)
+{
+	CKR(cudaSetDevice(gpu));
+	cudaSetDeviceFlags(cudaDeviceScheduleBlockingSync);   /* low CPU use; ignored if the context exists */
+	cudaGetLastError();
+	cudaDeviceProp prop;
+	CKR(cudaGetDeviceProperties(&prop, gpu));
+	int grid = 0;
+	CKR(chc_init(gpu, &grid));
+	g_chc_grid[gpu] = grid;
+	mlog("GPU %d: %s, compute %d.%d, %d SM, %.1f GB, chc grid %d x 256", gpu, prop.name, prop.major, prop.minor,
+	     prop.multiProcessorCount, prop.totalGlobalMem / 1073741824.0, grid);
+	return true;
+}
+
+/* GPU self test: (1) the GPU finds the nonce of Chipcoin block 11625 in a launch that contains it (target = its own
+ * hash, so the bound itself is tested), (2) the candidates of launches with an easy target validate on the CPU */
+static bool chc_gpu_selftest(int gpu)
+{
+	uint8_t hdr[80];
+	unhex(CHC_REF_HEADER, hdr, 80);
+	const uint32_t counter = ((uint32_t)hdr[76] << 24) | ((uint32_t)hdr[77] << 16) | ((uint32_t)hdr[78] << 8) | hdr[79];
+	uint8_t ref[32];
+	unhex(CHC_REF_HASH, ref, 32);
+	uint64_t t64 = 0;
+	for (int i = 0; i < 8; i++) t64 = (t64 << 8) | ref[i];
+	CKR(chc_set_job(gpu, hdr, t64));
+	const uint32_t span = (uint32_t)g_chc_grid[gpu] * 256u;
+	const uint32_t start = counter - (counter % span);
+	uint32_t res[1 + CHC_MAX_RES];
+	CKR(chc_scan(gpu, start, 1, res));
+	bool found = false;
+	for (uint32_t i = 0; i < res[0] && i < CHC_MAX_RES; i++) if (res[1 + i] == counter) found = true;
+	/* easy target: top 64 bits <= 2^52, about one hash in 4096 */
+	for (int i = 0; i < 80; i++) hdr[i] = (uint8_t)(i * 41 + 3 + gpu);
+	const uint64_t easy = 1ULL << 52;
+	CKR(chc_set_job(gpu, hdr, easy));
+	int checked = 0, bad = 0;
+	for (int k = 0; k < 3; k++) {
+		CKR(chc_scan(gpu, 0x01000000u * (k + 1), 1, res));
+		for (uint32_t i = 0; i < res[0] && i < CHC_MAX_RES; i++) {
+			uint8_t h2[80], dg[32];
+			memcpy(h2, hdr, 80);
+			const uint32_t n = res[1 + i];
+			h2[76] = (uint8_t)(n >> 24); h2[77] = (uint8_t)(n >> 16); h2[78] = (uint8_t)(n >> 8); h2[79] = (uint8_t)n;
+			gm_sha256d(h2, 80, dg);
+			uint64_t top = 0;
+			for (int b = 0; b < 8; b++) top = (top << 8) | dg[b];
+			checked++;
+			if (top > easy) bad++;
+		}
+	}
+	const bool ok = found && checked > 0 && bad == 0;
+	mlog("GPU %d: chc self test: Chipcoin block 11625 nonce %s, %d candidates checked on the CPU, %d wrong -> %s", gpu,
+	     found ? "found" : "NOT found", checked, bad, ok ? "OK" : "FAILED");
+	return ok;
+}
+
+/* mines chc on one GPU until quit (returns true) or a CUDA error (returns false, details logged) */
+static bool chc_gpu_mine(int gpu, int slot)
+{
+	const bool bench = g_cfg.bench > 0;
+	const uint32_t span = (uint32_t)g_chc_grid[gpu] * 256u;
+	uint32_t npt = 64;   /* counters per thread per launch, adjusted to about 0.25 s per launch */
+	uint32_t en2ctr = 0;
+	while (!g_quit) {
+		work w;
+		if (bench) {
+			for (int i = 0; i < 80; i++) w.header[i] = (uint8_t)(rand() & 0xFF);
+			memset(w.target, 0, 32);
+			w.target64 = 0;
+			w.height = 0;
+		} else if (!pool_work(slot, en2ctr, w)) { sleep_ms(200); continue; }
+		cudaError_t e = chc_set_job(gpu, w.header, w.target64);
+		if (e != cudaSuccess) { mlog("GPU %d: job upload failed: %s", gpu, cudaGetErrorString(e)); return false; }
+		const auto t0 = std::chrono::steady_clock::now();
+		uint64_t start = 0;
+		while (!g_quit && start < (1ULL << 32)) {
+			if (!bench) {
+				if (g_gen.load() != w.gen) break;   /* new job, difficulty or connection */
+			} else if (std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count() > g_cfg.refresh) break;
+			const uint64_t left = (1ULL << 32) - start;
+			uint32_t n = npt;
+			if ((uint64_t)span * n > left) n = (uint32_t)((left + span - 1) / span);
+			uint32_t res[1 + CHC_MAX_RES];
+			const auto l0 = std::chrono::steady_clock::now();
+			e = chc_scan(gpu, (uint32_t)start, n, res);
+			if (e != cudaSuccess) {
+				mlog("GPU %d: CUDA error %s (chc, grid %d, %u counters per thread, start %08llx, %.1f s on this work)", gpu,
+				     cudaGetErrorString(e), g_chc_grid[gpu], n, (unsigned long long)start,
+				     std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count());
+				return false;
+			}
+			const double dl = std::chrono::duration<double>(std::chrono::steady_clock::now() - l0).count();
+			if (n == npt) {
+				if (dl < 0.15 && npt < 4096) npt *= 2;
+				else if (dl > 0.5 && npt > 1) npt /= 2;
+			}
+			const uint64_t done = std::min<uint64_t>((uint64_t)span * n, left);
+			g_stat[gpu].hashes += done;
+			start += (uint64_t)span * n;
+			if (bench) continue;
+			const uint32_t cnt = res[0] < CHC_MAX_RES ? res[0] : CHC_MAX_RES;
+			for (uint32_t i = 0; i < cnt; i++) {
+				const uint32_t nonce = chc_bswap32(res[1 + i]);   /* header bytes = counter big-endian */
+				uint8_t dg[32];
+				if (!cpu_check(w, nonce, dg)) {
+					/* the GPU compares the top 64 bits only: a candidate can fail the full target */
+					uint64_t top = 0;
+					for (int b = 0; b < 8; b++) top = (top << 8) | dg[b];
+					if (top > w.target64) { g_cpu_bad++; mlog("GPU %d: nonce %08x does not validate on the CPU", gpu, nonce); }
+					continue;
+				}
+				submit_share(gpu, w, nonce, dg);
+			}
+		}
+	}
+	return true;
+}
+
+static void chc_gpu_thread(int gpu, int slot)
+{
+	while (!g_quit) {
+		if (!chc_gpu_init(gpu) || !chc_gpu_selftest(gpu)) { mlog("GPU %d: disabled", gpu); chc_free(gpu); break; }
+		mlog("GPU %d: mining chc", gpu);
+		g_stat[gpu].alive = true;
+		const bool ok = chc_gpu_mine(gpu, slot);
+		g_stat[gpu].alive = false;
+		chc_free(gpu);
 		if (ok) break;   /* quit */
 		mlog("GPU %d: CUDA error, the miner exits to be restarted (last pool messages, unix s mod 1e5:%s)", gpu, ev_dump().c_str());
 		g_cuda_fatal = true;
@@ -2566,6 +2733,7 @@ static void gpu_thread(int gpu, int slot)
 	if (g_cfg.algo == ALGO_ETHASH) { eth_gpu_thread(gpu, slot); return; }
 	if (g_cfg.algo == ALGO_EQ192) { eq_gpu_thread(gpu, slot); return; }
 	if (g_cfg.algo == ALGO_TING) { ting_gpu_thread(gpu, slot); return; }
+	if (g_cfg.algo == ALGO_CHC) { chc_gpu_thread(gpu, slot); return; }
 	if (g_cfg.algo == ALGO_LYRA2V2) { l2_gpu_thread(gpu, slot); return; }
 	if (g_cfg.algo == ALGO_NEOSCRYPT) { ns_gpu_thread(gpu, slot); return; }
 	int kv = -1;
@@ -2708,6 +2876,12 @@ static bool cpu_reference_ok()
 	ting_block_id(th, th + TING_NONCE_OFFSET, tid);
 	const bool k1 = tohex(tid, 32) == TING_REF_ID;
 	mlog("CPU reference ting: Ting block 35104 BlockId %s", k1 ? "OK" : "WRONG");
+	/* chc / Chipcoin: sha256d of mainnet block 11625 = its block hash (digest bytes as the node shows them) */
+	uint8_t ch[80], cd[32];
+	unhex(CHC_REF_HEADER, ch, 80);
+	gm_sha256d(ch, 80, cd);
+	const bool c1 = tohex(cd, 32) == CHC_REF_HASH;
+	mlog("CPU reference chc: Chipcoin block 11625 hash %s", c1 ? "OK" : "WRONG");
 	/* equihash192 / Ycash: BLAKE2b-384 "ZcashPoW" known answers (Python hashlib), then real Ycash blocks: mined solution
 	 * valid, block hash recomputed, corrupted and misordered variants rejected */
 	int kat_bad = 0;
@@ -2743,23 +2917,25 @@ static bool cpu_reference_ok()
 	     e1 ? "OK" : "WRONG", (int)(sizeof(eq_chain) / sizeof(eq_chain[0])), e2 ? "OK" : "WRONG");
 	/* ethash / NEX Chain: only when mining it (the cache of epoch 1 takes about 2 s to build; it is kept for mining) */
 	const bool x1 = g_cfg.algo != ALGO_ETHASH || eth_cpu_reference_ok();
-	return g1 && g2 && t1 && m1 && s1 && b1 && p1 && r1 && n1 && n2 && k1 && e1 && e2 && x1;
+	return g1 && g2 && t1 && m1 && s1 && b1 && p1 && r1 && n1 && n2 && k1 && c1 && e1 && e2 && x1;
 }
 
 static void usage()
 {
 	fprintf(stderr,
 	        MINER_NAME " " GOSTMINER_VERSION " - GPU miner for NVIDIA, no dev fee\n"
-	        "usage: crypto-connection-miner [--algo gostd|lyra2v2|neoscrypt|ting|equihash192|ethash] [--gpus 0,1] [--kernel N]\n"
+	        "usage: crypto-connection-miner [--algo gostd|lyra2v2|neoscrypt|ting|equihash192|ethash|chc] [--gpus 0,1] [--kernel N]\n"
 	        "                               [--intensity N] [--tpb N] [--stats S] [--log FILE] [--selftest] [--bench S]\n"
 	        "  --algo : gostd (GOSTcoin, default), lyra2v2 (Bitmark), neoscrypt (Feathercoin), ting (Daler),\n"
-	        "           equihash192 (Ycash; about 5.4 GB of GPU memory per card) or ethash (NEX Chain; DAG about 1 GB)\n"
+	        "           equihash192 (Ycash; about 5.4 GB of GPU memory per card), ethash (NEX Chain; DAG about 1 GB)\n"
+	        "           or chc (Chipcoin)\n"
 	        "  solo : [--conf FILE] [--host IP] [--port N] [--refresh S]   (getwork on the local GOSTcoin wallet, gostd)\n"
 	        "  pool : --pool HOST:PORT --user ADDRESS.WORKER [--pass X]      (stratum; ting: the user is your Ting account,\n"
 	        "         64 hex digits)\n"
 	        "         --user alone: Crypto Connection pool, " DEFAULT_POOL_HOST " port 4033 (gostd) / 4043 (lyra2v2) / 4063 (neoscrypt)\n"
 	        "         / 4073 (ting) / 4053 (equihash192: the user is your transparent Ycash address, s1...)\n"
-	        "         / 4083 (ethash: NEX Chain, the user is your 0x... address)\n");
+	        "         / 4083 (ethash: NEX Chain, the user is your 0x... address)\n"
+	        "         / 4093 (chc: Chipcoin, the user is your CHCQ... address)\n");
 }
 
 int main(int argc, char **argv)
@@ -2776,6 +2952,7 @@ int main(int argc, char **argv)
 			else if (v == "ting" || v == "daler" || v == "dlr") g_cfg.algo = ALGO_TING;
 			else if (v == "equihash192" || v == "equihash192_7" || v == "eq192" || v == "ycash" || v == "yec") g_cfg.algo = ALGO_EQ192;
 			else if (v == "ethash" || v == "nexc" || v == "nex" || v == "nexchain") g_cfg.algo = ALGO_ETHASH;
+			else if (v == "chc" || v == "chipcoin") g_cfg.algo = ALGO_CHC;
 			else { fprintf(stderr, "unknown algorithm %s\n", v.c_str()); usage(); return 1; }
 		}
 		else if (a == "--intensity" || a == "-i") g_cfg.intensity = atoi(next());
@@ -2812,11 +2989,12 @@ int main(int argc, char **argv)
 		                  g_cfg.algo == ALGO_NEOSCRYPT ? DEFAULT_POOL_PORT_NEOSCRYPT :
 		                  g_cfg.algo == ALGO_TING ? DEFAULT_POOL_PORT_TING :
 		                  g_cfg.algo == ALGO_EQ192 ? DEFAULT_POOL_PORT_EQ192 :
-		                  g_cfg.algo == ALGO_ETHASH ? DEFAULT_POOL_PORT_ETHASH : DEFAULT_POOL_PORT_GOSTD;
+		                  g_cfg.algo == ALGO_ETHASH ? DEFAULT_POOL_PORT_ETHASH :
+		                  g_cfg.algo == ALGO_CHC ? DEFAULT_POOL_PORT_CHC : DEFAULT_POOL_PORT_GOSTD;
 	}
 	if (g_cfg.pool() && (g_cfg.pool_port <= 0 || g_cfg.worker.empty())) { usage(); return 1; }
 	if (!g_cfg.logfile.empty()) g_log = fopen(g_cfg.logfile.c_str(), "a");
-	mlog("%s %s - GPU miner for NVIDIA (gostd: GOSTcoin, lyra2v2: Bitmark, neoscrypt: Feathercoin, ting: Daler, equihash192: Ycash, ethash: NEX Chain), no dev fee, algorithm %s, %s mode",
+	mlog("%s %s - GPU miner for NVIDIA (gostd: GOSTcoin, lyra2v2: Bitmark, neoscrypt: Feathercoin, ting: Daler, equihash192: Ycash, ethash: NEX Chain, chc: Chipcoin), no dev fee, algorithm %s, %s mode",
 	     MINER_NAME, GOSTMINER_VERSION, algo_name(g_cfg.algo), g_cfg.bench ? "bench" : g_cfg.pool() ? "pool" : "solo");
 	if (g_cfg.algo != ALGO_GOSTD && !g_cfg.pool() && !g_cfg.bench && !g_cfg.selftest) {
 		mlog("%s: pool mode only (--pool HOST:PORT --user ADDRESS.WORKER)", algo_name(g_cfg.algo));
@@ -2844,6 +3022,7 @@ int main(int argc, char **argv)
 			else if (g_cfg.algo == ALGO_TING) { ok = ting_gpu_init(g) && ting_gpu_selftest(g) && ok; ting_free(g); }
 			else if (g_cfg.algo == ALGO_EQ192) { ok = eq_gpu_init(g) && eq_gpu_selftest(g) && ok; eq_free(g); }
 			else if (g_cfg.algo == ALGO_ETHASH) { ok = eth_gpu_init(g) && eth_gpu_selftest(g) && ok; eth_free(g); }
+			else if (g_cfg.algo == ALGO_CHC) { ok = chc_gpu_init(g) && chc_gpu_selftest(g) && ok; chc_free(g); }
 			else { int grids[NKERNELS]; ok = gpu_init(g, grids) && gpu_selftest(g) && ok; }
 		}
 		mlog(ok ? "SELF TEST OK" : "SELF TEST FAILED");

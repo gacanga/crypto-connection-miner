@@ -11,6 +11,7 @@ pool. **No dev fee.** (Named GostMiner up to version 0.4.0: https://github.com/g
 | Ting (SHA-256 over Ting's tagged header) | `--algo ting` | Daler (DLR) and other coins of Ting | 4073 |
 | Equihash 192,7 ("ZcashPoW") | `--algo equihash192` | Ycash (YEC) | (pool closed on 10/11/2026: use `--pool`) |
 | Ethash (epochs of 30000 blocks) | `--algo ethash` | NEX Chain (NEXC) and other Ethash chains | 4083 |
+| SHA-256d read big-endian | `--algo chc` | Chipcoin (CHC) | 4093 |
 
 - NVIDIA GPUs from Maxwell (GTX 900) to Blackwell (RTX 50), Windows 10/11 x64 and Linux x86-64 (glibc 2.34+).
   equihash192 needs about 5.4 GB of GPU memory per card (6 GB cards or more); ethash keeps the DAG of the current
@@ -29,8 +30,8 @@ The same files are on the [downloads page](https://crypto-connection.net/#/downl
 
 | File | SHA-256 |
 |---|---|
-| CryptoConnectionMiner-v0.9.0-win64-cuda12.zip | `78d1f6d2c65dadfe4dcb05c1ebe49dbcf09407ac22de6b833f0078784d9fbae5` |
-| CryptoConnectionMiner-v0.9.0-linux-x64-cuda12.tar.gz | `27c7e740f715ffc77f64eba647fb057e8be1b50292012ef0a01c1f3cafc3b331` |
+| CryptoConnectionMiner-v0.10.0-win64-cuda12.zip | `5309863535cd8e7e3d2439383c61eaa10712b9259e29f2ae6379a90e0e17957c` |
+| CryptoConnectionMiner-v0.10.0-linux-x64-cuda12.tar.gz | `ef8b6fd29397d58fe6699ad4dda034b238b906338c67e30a23152bcc12df2099` |
 
 Check a file before you run it: Windows (PowerShell) `Get-FileHash FILE -Algorithm SHA256`, Linux `sha256sum FILE`.
 
@@ -38,13 +39,14 @@ Check a file before you run it: Windows (PowerShell) `Get-FileHash FILE -Algorit
 
 Easiest: open `start_gostcoin.bat` / `start_gostcoin.sh` (GOSTcoin), `start_bitmark.bat` / `start_bitmark.sh`
 (Bitmark), `start_feathercoin.bat` / `start_feathercoin.sh` (Feathercoin), `start_daler.bat` / `start_daler.sh`
-(Daler: put your Ting account in `ACCOUNT`) or `start_nexchain.bat` / `start_nexchain.sh` (NEX Chain: a 0x...
-address), put your address in `ADDRESS`, then run it. It mines on the Crypto
+(Daler: put your Ting account in `ACCOUNT`), `start_nexchain.bat` / `start_nexchain.sh` (NEX Chain: a 0x...
+address) or `start_chipcoin.bat` / `start_chipcoin.sh` (Chipcoin: a CHCQ... address), put your address in `ADDRESS`,
+then run it. It mines on the Crypto
 Connection pool and restarts the miner automatically. Follow your hashrate, balance and payments on https://crypto-connection.net (My stats).
 
 Command line: with `--user` and no `--pool`, the miner connects to the Crypto Connection pool
 (crypto-connection.net, port 4033 for GOSTcoin, 4043 for Bitmark, 4063 for Feathercoin, 4073 for Daler, 4083 for NEX
-Chain). The Crypto Connection Ycash pool closed on 10/11/2026: for Ycash, give `--pool` with another Ycash pool.
+Chain, 4093 for Chipcoin). The Crypto Connection Ycash pool closed on 10/11/2026: for Ycash, give `--pool` with another Ycash pool.
 
 ```
 GOSTcoin, Windows:  crypto-connection-miner.exe --user YOUR_GST_ADDRESS.rig1
@@ -57,11 +59,13 @@ Daler, Windows:     crypto-connection-miner.exe --algo ting --user YOUR_TING_ACC
 Daler, Linux:       ./crypto-connection-miner --algo ting --user YOUR_TING_ACCOUNT.rig1
 NEX Chain, Windows: crypto-connection-miner.exe --algo ethash --user YOUR_NEXC_ADDRESS.rig1
 NEX Chain, Linux:   ./crypto-connection-miner --algo ethash --user YOUR_NEXC_ADDRESS.rig1
+Chipcoin, Windows:  crypto-connection-miner.exe --algo chc --user YOUR_CHC_ADDRESS.rig1
+Chipcoin, Linux:    ./crypto-connection-miner --algo chc --user YOUR_CHC_ADDRESS.rig1
 Ycash (other pool): crypto-connection-miner.exe --algo equihash192 --pool HOST:PORT --user YOUR_YEC_ADDRESS.rig1
 Another pool:       crypto-connection-miner.exe --pool HOST:PORT --user YOUR_ADDRESS.rig1 --pass x
 ```
 
-`test.bat` / `test.sh` check every GPU against the six algorithms.
+`test.bat` / `test.sh` check every GPU against the seven algorithms.
 
 A Ting account (Daler payouts) is 64 hex characters: create one with the Ting ID Android app
 (https://github.com/ting-organization/ting-id) or with `ting wallet create` of ting-miner
@@ -72,12 +76,17 @@ Ycash payouts go to a transparent address (s1...): YecWallet or ycashd (https://
 A NEX Chain address is an Ethereum-style 0x... address: the NEX wallet (https://getnexwallet.com) or MetaMask with the
 NEX Chain network (RPC https://rpc.getnexwallet.com, chain ID 6396).
 
+A Chipcoin mainnet address is a post-quantum address starting with CHCQ: create it with the official Chipcoin
+wallet (https://github.com/chipcoin-protocol/chipcoin, `chipcoin wallet-generate`; keep the wallet file safe, it holds
+the private key). Chipcoin reads the double SHA-256 of the header as a big-endian number: Bitcoin ASICs (USB sticks
+included) cannot mine it, GPUs can.
+
 ## Options
 
 | Option | Meaning |
 |---|---|
-| `--algo A` | `gostd` (GOSTcoin, default), `lyra2v2` (Bitmark), `neoscrypt` (Feathercoin), `ting` (Daler), `equihash192` (Ycash) or `ethash` (NEX Chain) |
-| `--pool HOST:PORT` | stratum pool (default with `--user`: crypto-connection.net, port 4033 gostd / 4043 lyra2v2 / 4063 neoscrypt / 4073 ting / 4083 ethash) |
+| `--algo A` | `gostd` (GOSTcoin, default), `lyra2v2` (Bitmark), `neoscrypt` (Feathercoin), `ting` (Daler), `equihash192` (Ycash), `ethash` (NEX Chain) or `chc` (Chipcoin) |
+| `--pool HOST:PORT` | stratum pool (default with `--user`: crypto-connection.net, port 4033 gostd / 4043 lyra2v2 / 4063 neoscrypt / 4073 ting / 4083 ethash / 4093 chc) |
 | `--user ADDRESS.WORKER --pass x` | your payout address and a worker name; `--pass d=64` asks the pool for a fixed difficulty |
 | `--gpus 0,1,2` | GPUs to use (default: all) |
 | `--kernel N` | gostd: force a kernel variant (default: each GPU measures the 5 variants for 3 s and keeps the fastest) |
@@ -96,10 +105,11 @@ and a merkle root; Bitmark block 2490869 hash, its lyra2rev2 proof of work and m
 6428900 hash and its NeoScrypt proof of work; the BlockId of Ting block 35104; for Ycash, BLAKE2b "ZcashPoW" known
 answers and 6 real Ycash blocks (mined solution valid, block hash recomputed, altered solutions rejected); with
 `--algo ethash`, keccak known answers, the cache and DAG sizes of the go-ethereum tables and 2 real NEX Chain blocks
-(mix digest and result). If it prints `WRONG`, do not mine. The lyra2v2 GPU self test must find the nonce of Bitmark block 2490869, the neoscrypt one the
+(mix digest and result); the hash of Chipcoin block 11625. If it prints `WRONG`, do not mine. The lyra2v2 GPU self test must find the nonce of Bitmark block 2490869, the neoscrypt one the
 nonce of Feathercoin block 6428900, the ting one the nonce of Ting block 35104, the equihash192 one exactly the
 reference solutions of 5 headers (3 of a real pool job, 2 real Ycash blocks whose mined solution must be found), the
-ethash one the nonce of NEX Chain block 30001 with a DAG built on the GPU, and every candidate of 16 launches with an
+ethash one the nonce of NEX Chain block 30001 with a DAG built on the GPU, the chc one the nonce of Chipcoin block
+11625, and every candidate of 16 launches with an
 easy target must validate on the CPU.
 
 ## CUDA errors and overclocking
@@ -115,7 +125,7 @@ Typical speed on a P104-100 (GTX 1070 class) at 160 W, core at stock: gostd 21-2
 neoscrypt about 865 kH/s (the miner shows neoscrypt speeds in kH/s), ting about 2.05-2.09 GH/s (shown as 2050-2090 MH/s),
 equihash192 about 11-15 Sol/s depending on the memory clock (valid solutions per
 second). Ethash is limited by the memory: about 32 MH/s with the memory at +700 MHz (5702 MHz) and 18 MH/s with the
-memory lowered to 2999 MHz (it draws only 55-60 W).
+memory lowered to 2999 MHz (it draws only 55-60 W). chc: about 840-900 MH/s.
 
 ## Ting stratum (Daler)
 
@@ -163,6 +173,22 @@ Stratum: EthereumStratum/1.0.0 (NiceHash), as Miningcore serves it: `mining.subs
 EXTRANONCE1 || miner part (GPU slot, counter, 32 bits scanned by the GPU); `mining.submit` `[worker, job, miner part
 (hex, without EXTRANONCE1)]`. `mining.set_extranonce` is handled.
 
+## Chipcoin (chc)
+
+Chipcoin's proof of work is the double SHA-256 of a Bitcoin-style 80-byte header (version, previous block, merkle
+root, time, bits, nonce, little-endian fields), but the digest is read as a **big-endian** integer: its first bytes
+must be zero. The miner hashes the first 64 header bytes once per job (midstate) and the first 3 rounds of the second
+block on the host; on the GPU one attempt costs the rest of that compression plus the second SHA-256, and the first 64
+bits of the digest are compared with the target (`gpu/chc`, written for this miner). Every candidate is checked on the
+CPU against the full 256-bit share target.
+
+Stratum: Bitcoin stratum v1 as the Crypto Connection pool (Miningcore, family `chipcoin`) serves it:
+`mining.subscribe` -> `[[...], EXTRANONCE1 (4 hex = 2 bytes), 2]`; `mining.notify` `[job, previous hash (4-byte words
+reversed), coinb1, coinb2, merkle branches, version, bits, time, clean]`; the coinbase is a Chipcoin transaction whose
+4-byte locktime is EXTRANONCE1 || EXTRANONCE2 (the miner puts the GPU slot in 4 bits and a counter in 12 bits);
+transaction ids and merkle nodes are sha256d as in Bitcoin; `mining.set_difficulty` `[d]` - share target = 2^224 / d;
+`mining.submit` `[worker, job, EXTRANONCE2, time, nonce]`. The user is your CHCQ... address.
+
 ## Build
 
 - Windows: CUDA 12.9 and Visual Studio 2022 (C++ tools), then `windows\build_miner.bat dev\crypto-connection-miner.exe`.
@@ -177,6 +203,10 @@ EXTRANONCE1 || miner part (GPU slot, counter, 32 bits scanned by the GPU); `mini
 
 ## Changes
 
+- 0.10.0: new algorithm `--algo chc` for Chipcoin (CHC): SHA-256d read big-endian, midstate on the host, two
+  compressions per attempt on the GPU (about 840-900 MH/s on a P104-100); Bitcoin stratum with a Chipcoin coinbase
+  (above); pool port 4093 by default; start scripts `start_chipcoin`; `test` checks the seven algorithms; CPU check
+  and GPU self test on Chipcoin block 11625. Other algorithms unchanged.
 - 0.9.0: new algorithm `--algo ethash` for NEX Chain (NEXC) and other Ethash chains: DAG built on the GPU, search
   kernel with 8 threads per hash, CPU reference written for this miner; EthereumStratum/1.0.0 (above); pool port 4083
   by default; start scripts `start_nexchain`; `test` checks the six algorithms; CPU checks on 2 real NEX Chain blocks,
@@ -202,6 +232,6 @@ EXTRANONCE1 || miner part (GPU slot, counter, 32 bits scanned by the GPU); `mini
 ## Licence
 
 GNU GPL v3 (`LICENSE`, `COPYING.txt`): the lyra2v2 and neoscrypt GPU kernels come from ccminer 2.3.1; the ting kernel
-(`gpu/ting`), the ethash kernels (`gpu/ethash`) and the Ethash CPU reference (`src/ethash_ref.c`) were written for
-this miner; the equihash192 solver (`gpu/equihash192`) comes from YecMiner, same
+(`gpu/ting`), the ethash kernels (`gpu/ethash`), the Ethash CPU reference (`src/ethash_ref.c`) and the chc kernel
+(`gpu/chc`) were written for this miner; the equihash192 solver (`gpu/equihash192`) comes from YecMiner, same
 author, Apache-2.0 (compatible with the GPL v3). Third-party code and its licences are listed in `NOTICE.txt`.

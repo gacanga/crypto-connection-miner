@@ -1,4 +1,4 @@
-Crypto Connection Miner 0.9.0 - mineur GPU multi-coins pour NVIDIA. Sans frais de développeur. (S'appelait
+Crypto Connection Miner 0.10.0 - mineur GPU multi-coins pour NVIDIA. Sans frais de développeur. (S'appelait
 GostMiner jusqu'à la 0.4.0.)
   --algo gostd     (par défaut)  GOSTcoin (GST)
   --algo lyra2v2                 Bitmark (MARKS) et autres coins Lyra2REv2
@@ -8,21 +8,24 @@ GostMiner jusqu'à la 0.4.0.)
   --algo equihash192             Ycash (YEC), Equihash 192,7 ; l'utilisateur est votre adresse Ycash transparente
                                  (s1...) ; environ 5,4 Go de mémoire par carte (6 Go ou plus). La pool Ycash de Crypto
                                  Connection a fermé le 10/11/2026 : utilisez --pool avec une autre pool Ycash
-  --algo ethash                  NEX Chain (NEXC) et autres chaînes Ethash (nouveau en 0.9.0) ; l'utilisateur est
-                                 votre adresse 0x... ; le DAG de l'époque en cours reste dans la mémoire du GPU
-                                 (environ 1 Go sur NEX Chain)
+  --algo ethash                  NEX Chain (NEXC) et autres chaînes Ethash ; l'utilisateur est votre adresse 0x... ;
+                                 le DAG de l'époque en cours reste dans la mémoire du GPU (environ 1 Go sur NEX Chain)
+  --algo chc                     Chipcoin (CHC), SHA-256d lu en big-endian (nouveau en 0.10.0) ; l'utilisateur est
+                                 votre adresse CHCQ... Les ASIC Bitcoin ne peuvent pas miner Chipcoin, les GPU oui
 
 Cartes NVIDIA de Maxwell (GTX 900) à Blackwell (RTX 50), Windows 10/11 x64 et Linux x86-64 (glibc 2.34 ou plus).
 Pilote : un pilote NVIDIA récent (support CUDA 12.9 pour les cartes les plus récentes).
 
 Le plus simple : modifiez puis lancez start_gostcoin.bat / start_gostcoin.sh (GOSTcoin), start_bitmark.bat /
 start_bitmark.sh (Bitmark), start_feathercoin.bat / start_feathercoin.sh (Feathercoin), start_nexchain.bat /
-start_nexchain.sh (NEX Chain) : mettez votre adresse dans ADDRESS, ou start_daler.bat / start_daler.sh (Daler) :
+start_nexchain.sh (NEX Chain), start_chipcoin.bat / start_chipcoin.sh (Chipcoin) : mettez votre adresse dans ADDRESS, ou start_daler.bat / start_daler.sh (Daler) :
 mettez votre compte Ting dans ACCOUNT. Ils minent sur la pool Crypto Connection (crypto-connection.net, 1 % de frais
 de pool) et relancent le mineur automatiquement. Un compte Ting se crée avec l'appli Android Ting ID
 (github.com/ting-organization/ting-id) ou avec « ting wallet create » (github.com/ting-organization/ting-miner). Une
 adresse NEX Chain (0x...) vient du wallet NEX (getnexwallet.com) ou de MetaMask avec le réseau NEX Chain (RPC
-https://rpc.getnexwallet.com, chain ID 6396). Statistiques : https://crypto-connection.net
+https://rpc.getnexwallet.com, chain ID 6396). Une adresse Chipcoin (CHCQ...) vient du wallet officiel de Chipcoin
+(github.com/chipcoin-protocol/chipcoin, « chipcoin wallet-generate » ; gardez le fichier du wallet en lieu sûr, il
+contient la clé privée). Statistiques : https://crypto-connection.net
 
 Ligne de commande :
   GOSTcoin, Windows : crypto-connection-miner.exe --user VOTRE_ADRESSE_GST.rig1
@@ -35,30 +38,32 @@ Ligne de commande :
   Daler, Linux :         ./crypto-connection-miner --algo ting --user VOTRE_COMPTE_TING.rig1
   NEX Chain, Windows :   crypto-connection-miner.exe --algo ethash --user VOTRE_ADRESSE_NEXC.rig1
   NEX Chain, Linux :     ./crypto-connection-miner --algo ethash --user VOTRE_ADRESSE_NEXC.rig1
+  Chipcoin, Windows :    crypto-connection-miner.exe --algo chc --user VOTRE_ADRESSE_CHC.rig1
+  Chipcoin, Linux :      ./crypto-connection-miner --algo chc --user VOTRE_ADRESSE_CHC.rig1
   Ycash (autre pool) :   crypto-connection-miner.exe --algo equihash192 --pool HOTE:PORT --user VOTRE_ADRESSE_YEC.rig1
   Avec --user et sans --pool, le mineur se connecte à la pool Crypto Connection : crypto-connection.net port 4033
-  (GOSTcoin), 4043 (Bitmark), 4063 (Feathercoin), 4073 (Daler) ou 4083 (NEX Chain). Toute autre pool stratum :
+  (GOSTcoin), 4043 (Bitmark), 4063 (Feathercoin), 4073 (Daler), 4083 (NEX Chain) ou 4093 (Chipcoin). Toute autre pool stratum :
   ajoutez --pool HOTE:PORT (et --pass x) ; pour Ting, la pool doit parler le stratum Crypto Connection pour Ting
   (README.fr.md) ; pour Ethash, EthereumStratum/1.0.0 (NiceHash), comme les pools Miningcore.
 
-Options : --algo (gostd, lyra2v2, neoscrypt, ting, equihash192 ou ethash), --pool HOTE:PORT, --user ADRESSE.WORKER
+Options : --algo (gostd, lyra2v2, neoscrypt, ting, equihash192, ethash ou chc), --pool HOTE:PORT, --user ADRESSE.WORKER
 (--pass d=64 demande une difficulté fixe à la pool), --gpus 0,1,2 (cartes), --kernel N (gostd : variante forcée ;
 par défaut chaque carte mesure les 5 variantes 3 s et garde la plus rapide), --intensity N (lyra2v2 : 2^N hashs par
 lancement ; par défaut 22 jusqu'à 20 SM, 23-24 au-delà, limité par la mémoire de la carte ; neoscrypt : 2^N hashs par
 lancement, par défaut 16 jusqu'à 20 SM, 17-18 au-delà, environ 33 Ko de mémoire de carte par hash ; vitesse affichée
 en kH/s), --tpb N (equihash192 : threads par bloc, multiple de 32, 512 par défaut ; vitesse affichée en Sol/s),
---stats S, --log FICHIER, --selftest (test.bat / test.sh testent les six algos), --bench S.
+--stats S, --log FICHIER, --selftest (test.bat / test.sh testent les sept algos), --bench S.
 Solo sur un wallet GOSTcoin local (getwork, gostd) : --conf gostcoin.conf --port 8795.
 
 Contrôles : au démarrage, le mineur vérifie ses références CPU sur de vrais blocs (GOSTcoin : bloc genèse,
 identifiant d'une coinbase, racine merkle ; Bitmark : hash du bloc 2490869, sa preuve de travail lyra2rev2 et sa
 racine merkle ; Feathercoin : hash du bloc 6428900 et sa preuve de travail NeoScrypt ; Ting : BlockId du bloc 35104 ;
 Ycash : réponses connues du BLAKE2b « ZcashPoW » et 6 vrais blocs, solution minée et hash du bloc ; avec --algo
-ethash : réponses connues de keccak, tailles du cache et du DAG, 2 vrais blocs NEX Chain). S'il affiche WRONG, ne pas
+ethash : réponses connues de keccak, tailles du cache et du DAG, 2 vrais blocs NEX Chain ; Chipcoin : hash du bloc 11625). S'il affiche WRONG, ne pas
 miner. L'autotest GPU lyra2v2 doit retrouver le nonce du bloc Bitmark 2490869, celui de neoscrypt le nonce du bloc
 Feathercoin 6428900, celui de ting le nonce du bloc Ting 35104, celui d'equihash192 exactement les solutions de
 référence de 5 en-têtes (dont 2 vrais blocs Ycash dont la solution minée doit être retrouvée), celui d'ethash le nonce
-du bloc NEX Chain 30001 avec le DAG construit sur le GPU. Chaque résultat GPU est revérifié sur le CPU avant envoi.
+du bloc NEX Chain 30001 avec le DAG construit sur le GPU, celui de chc le nonce du bloc Chipcoin 11625. Chaque résultat GPU est revérifié sur le CPU avant envoi.
 
 Ethash : au démarrage (et à chaque nouvelle époque, tous les 30000 blocs), le mineur construit le cache de l'époque
 sur le CPU (environ 2 s) et chaque carte construit son DAG (environ 20 à 30 s pour 1 Go sur une P104-100) avant de
@@ -73,9 +78,10 @@ décalage mémoire ne pose pas de problème) et baissez-le si l'erreur apparaît
 
 Vitesse typique sur une P104-100 (classe GTX 1070) à 160 W, cœur d'origine : gostd 21-23 MH/s, lyra2v2 36-37 MH/s,
 neoscrypt environ 865 kH/s, ting environ 2,05-2,09 GH/s, equihash192 environ 11 à 15 Sol/s, ethash environ 32 MH/s
-avec la mémoire à +700 MHz (Ethash est limité par la fréquence mémoire : 18 MH/s avec la mémoire baissée à 2999 MHz).
+avec la mémoire à +700 MHz (Ethash est limité par la fréquence mémoire : 18 MH/s avec la mémoire baissée à 2999 MHz), chc
+environ 840 à 900 MH/s.
 
-Licence : GNU GPL v3 (les noyaux lyra2v2 et neoscrypt viennent de ccminer ; les noyaux ting et ethash et la référence
-CPU d'Ethash ont été écrits pour ce mineur ; le solveur equihash192 vient de YecMiner, même auteur, Apache-2.0), voir
+Licence : GNU GPL v3 (les noyaux lyra2v2 et neoscrypt viennent de ccminer ; les noyaux ting, ethash et chc et la
+référence CPU d'Ethash ont été écrits pour ce mineur ; le solveur equihash192 vient de YecMiner, même auteur, Apache-2.0), voir
 NOTICE.txt et COPYING.txt. Code source : https://github.com/gacanga/crypto-connection-miner (et
-CryptoConnectionMiner-v0.9.0-src.tar.gz).
+CryptoConnectionMiner-v0.10.0-src.tar.gz).
