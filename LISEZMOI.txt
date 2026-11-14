@@ -1,4 +1,4 @@
-Crypto Connection Miner 0.10.0 - mineur GPU multi-coins pour NVIDIA. Sans frais de développeur. (S'appelait
+Crypto Connection Miner 0.10.1 - mineur GPU multi-coins pour NVIDIA (Chipcoin aussi sur le CPU). Sans frais de développeur. (S'appelait
 GostMiner jusqu'à la 0.4.0.)
   --algo gostd     (par défaut)  GOSTcoin (GST)
   --algo lyra2v2                 Bitmark (MARKS) et autres coins Lyra2REv2
@@ -12,6 +12,10 @@ GostMiner jusqu'à la 0.4.0.)
                                  le DAG de l'époque en cours reste dans la mémoire du GPU (environ 1 Go sur NEX Chain)
   --algo chc                     Chipcoin (CHC), SHA-256d lu en big-endian (nouveau en 0.10.0) ; l'utilisateur est
                                  votre adresse CHCQ... Les ASIC Bitcoin ne peuvent pas miner Chipcoin, les GPU oui
+  --algo chc --cpu               Chipcoin sur le CPU (nouveau en 0.10.1) : tout CPU x86-64, ni GPU ni pilote NVIDIA
+                                 nécessaires ; --threads N (par défaut tous les threads matériels, priorité basse) ;
+                                 script start_chipcoin_cpu.bat / start_chipcoin_cpu.sh. Environ 10 à 12 MH/s par
+                                 thread avec SHA-NI ou AVX2. Un cpuminer sha256d standard cherche les mauvais nonces
 
 Cartes NVIDIA de Maxwell (GTX 900) à Blackwell (RTX 50), Windows 10/11 x64 et Linux x86-64 (glibc 2.34 ou plus).
 Pilote : un pilote NVIDIA récent (support CUDA 12.9 pour les cartes les plus récentes).
@@ -40,6 +44,8 @@ Ligne de commande :
   NEX Chain, Linux :     ./crypto-connection-miner --algo ethash --user VOTRE_ADRESSE_NEXC.rig1
   Chipcoin, Windows :    crypto-connection-miner.exe --algo chc --user VOTRE_ADRESSE_CHC.rig1
   Chipcoin, Linux :      ./crypto-connection-miner --algo chc --user VOTRE_ADRESSE_CHC.rig1
+  Chipcoin sur le CPU :  crypto-connection-miner.exe --algo chc --cpu --user VOTRE_ADRESSE_CHC.cpu1
+                         ./crypto-connection-miner --algo chc --cpu --user VOTRE_ADRESSE_CHC.cpu1
   Ycash (autre pool) :   crypto-connection-miner.exe --algo equihash192 --pool HOTE:PORT --user VOTRE_ADRESSE_YEC.rig1
   Avec --user et sans --pool, le mineur se connecte à la pool Crypto Connection : crypto-connection.net port 4033
   (GOSTcoin), 4043 (Bitmark), 4063 (Feathercoin), 4073 (Daler), 4083 (NEX Chain) ou 4093 (Chipcoin). Toute autre pool stratum :
@@ -52,7 +58,7 @@ par défaut chaque carte mesure les 5 variantes 3 s et garde la plus rapide), --
 lancement ; par défaut 22 jusqu'à 20 SM, 23-24 au-delà, limité par la mémoire de la carte ; neoscrypt : 2^N hashs par
 lancement, par défaut 16 jusqu'à 20 SM, 17-18 au-delà, environ 33 Ko de mémoire de carte par hash ; vitesse affichée
 en kH/s), --tpb N (equihash192 : threads par bloc, multiple de 32, 512 par défaut ; vitesse affichée en Sol/s),
---stats S, --log FICHIER, --selftest (test.bat / test.sh testent les sept algos), --bench S.
+--cpu (chc sur le CPU ; --threads N, --cpu-path auto|shani|avx2|c), --stats S, --log FICHIER, --selftest (test.bat / test.sh testent les sept algos), --bench S.
 Solo sur un wallet GOSTcoin local (getwork, gostd) : --conf gostcoin.conf --port 8795.
 
 Contrôles : au démarrage, le mineur vérifie ses références CPU sur de vrais blocs (GOSTcoin : bloc genèse,
@@ -84,4 +90,4 @@ environ 840 à 900 MH/s.
 Licence : GNU GPL v3 (les noyaux lyra2v2 et neoscrypt viennent de ccminer ; les noyaux ting, ethash et chc et la
 référence CPU d'Ethash ont été écrits pour ce mineur ; le solveur equihash192 vient de YecMiner, même auteur, Apache-2.0), voir
 NOTICE.txt et COPYING.txt. Code source : https://github.com/gacanga/crypto-connection-miner (et
-CryptoConnectionMiner-v0.10.0-src.tar.gz).
+CryptoConnectionMiner-v0.10.1-src.tar.gz).

@@ -12,7 +12,7 @@ version 0.4.0 : https://github.com/gacanga/GostMiner.)
 | Ting (SHA-256 sur l'en-tête balisé de Ting) | `--algo ting` | Daler (DLR) et autres coins de Ting | 4073 |
 | Equihash 192,7 (« ZcashPoW ») | `--algo equihash192` | Ycash (YEC) | (pool fermée le 10/11/2026 : utilisez `--pool`) |
 | Ethash (époques de 30000 blocs) | `--algo ethash` | NEX Chain (NEXC) et autres chaînes Ethash | 4083 |
-| SHA-256d lu en big-endian | `--algo chc` | Chipcoin (CHC) | 4093 |
+| SHA-256d lu en big-endian | `--algo chc` (GPU) ou `--algo chc --cpu` (CPU, nouveau en 0.10.1) | Chipcoin (CHC) | 4093 |
 
 - Cartes NVIDIA de Maxwell (GTX 900) à Blackwell (RTX 50), Windows 10/11 x64 et Linux x86-64 (glibc 2.34 ou plus).
   equihash192 demande environ 5,4 Go de mémoire par carte (cartes de 6 Go ou plus) ; ethash garde le DAG de l'époque
@@ -31,8 +31,8 @@ SHA-256. Les mêmes fichiers sont sur la [page Téléchargements](https://crypto
 
 | Fichier | SHA-256 |
 |---|---|
-| CryptoConnectionMiner-v0.10.0-win64-cuda12.zip | `5309863535cd8e7e3d2439383c61eaa10712b9259e29f2ae6379a90e0e17957c` |
-| CryptoConnectionMiner-v0.10.0-linux-x64-cuda12.tar.gz | `ef8b6fd29397d58fe6699ad4dda034b238b906338c67e30a23152bcc12df2099` |
+| CryptoConnectionMiner-v0.10.1-win64-cuda12.zip | `90f4de35d66dd5d185c36c80cd5aada9e54bfbdd6069d9a743eb1e70c158fadd` |
+| CryptoConnectionMiner-v0.10.1-linux-x64-cuda12.tar.gz | `029811300c76988969887d6d36983fbc4b31c6f5bcf296114fa77e686c5cca74` |
 
 Vérifiez un fichier avant de le lancer : Windows (PowerShell) `Get-FileHash FICHIER -Algorithm SHA256`, Linux
 `sha256sum FICHIER`.
@@ -42,7 +42,7 @@ Vérifiez un fichier avant de le lancer : Windows (PowerShell) `Get-FileHash FIC
 Le plus simple : ouvrez `start_gostcoin.bat` / `start_gostcoin.sh` (GOSTcoin), `start_bitmark.bat` /
 `start_bitmark.sh` (Bitmark), `start_feathercoin.bat` / `start_feathercoin.sh` (Feathercoin), `start_daler.bat` /
 `start_daler.sh` (Daler : mettez votre compte Ting dans `ACCOUNT`), `start_nexchain.bat` / `start_nexchain.sh`
-(NEX Chain : une adresse 0x...) ou `start_chipcoin.bat` / `start_chipcoin.sh` (Chipcoin : une adresse CHCQ...), mettez votre adresse dans `ADDRESS`, puis lancez-le. Il mine sur la pool Crypto
+(NEX Chain : une adresse 0x...) `start_chipcoin.bat` / `start_chipcoin.sh` (Chipcoin sur GPU NVIDIA : une adresse CHCQ...) ou `start_chipcoin_cpu.bat` / `start_chipcoin_cpu.sh` (Chipcoin sur le CPU), mettez votre adresse dans `ADDRESS`, puis lancez-le. Il mine sur la pool Crypto
 Connection et relance le mineur automatiquement. Suivez votre hashrate, votre solde et vos paiements sur
 https://crypto-connection.net (Mes stats).
 
@@ -64,6 +64,8 @@ NEX Chain, Windows : crypto-connection-miner.exe --algo ethash --user VOTRE_ADRE
 NEX Chain, Linux :   ./crypto-connection-miner --algo ethash --user VOTRE_ADRESSE_NEXC.rig1
 Chipcoin, Windows :  crypto-connection-miner.exe --algo chc --user VOTRE_ADRESSE_CHC.rig1
 Chipcoin, Linux :    ./crypto-connection-miner --algo chc --user VOTRE_ADRESSE_CHC.rig1
+Chipcoin sur le CPU, Windows : crypto-connection-miner.exe --algo chc --cpu --user VOTRE_ADRESSE_CHC.cpu1
+Chipcoin sur le CPU, Linux :   ./crypto-connection-miner --algo chc --cpu --user VOTRE_ADRESSE_CHC.cpu1
 Ycash (autre pool) : crypto-connection-miner.exe --algo equihash192 --pool HOTE:PORT --user VOTRE_ADRESSE_YEC.rig1
 Autre pool :         crypto-connection-miner.exe --pool HOTE:PORT --user VOTRE_ADRESSE.rig1 --pass x
 ```
@@ -91,6 +93,9 @@ big-endian : les ASIC Bitcoin (clés USB comprises) ne peuvent pas le miner, les
 |---|---|
 | `--algo A` | `gostd` (GOSTcoin, par défaut), `lyra2v2` (Bitmark), `neoscrypt` (Feathercoin), `ting` (Daler), `equihash192` (Ycash), `ethash` (NEX Chain) ou `chc` (Chipcoin) |
 | `--pool HOTE:PORT` | pool stratum (par défaut avec `--user` : crypto-connection.net, port 4033 gostd / 4043 lyra2v2 / 4063 neoscrypt / 4073 ting / 4083 ethash / 4093 chc) |
+| `--cpu` | chc : mine Chipcoin sur le CPU au lieu des GPU (ni GPU ni pilote NVIDIA nécessaires) |
+| `--threads N` | avec `--cpu` : nombre de threads (par défaut tous les threads matériels, en priorité basse) |
+| `--cpu-path P` | avec `--cpu` : `auto` (par défaut, le chemin le plus rapide mesuré au démarrage), `shani` (extensions SHA), `avx2` ou `c` |
 | `--user ADRESSE.WORKER --pass x` | votre adresse de paiement et un nom de worker ; `--pass d=64` demande une difficulté fixe à la pool |
 | `--gpus 0,1,2` | cartes utilisées (par défaut : toutes) |
 | `--kernel N` | gostd : variante de noyau forcée (par défaut, chaque carte mesure les 5 variantes 3 s et garde la plus rapide) |
@@ -131,6 +136,11 @@ neoscrypt environ 865 kH/s (le mineur affiche les vitesses neoscrypt en kH/s), t
 2050-2090 MH/s), equihash192 environ 11 à 15 Sol/s selon la fréquence mémoire (solutions valides par
 seconde). Ethash est limité par la mémoire : environ 32 MH/s avec la mémoire à +700 MHz (5702 MHz) et 18 MH/s avec la
 mémoire baissée à 2999 MHz (la carte ne consomme que 55 à 60 W). chc : environ 840 à 900 MH/s.
+
+Chipcoin sur le CPU (`--cpu`) : environ 10 à 12 MH/s par thread avec SHA-NI ou AVX2 sur un Xeon à 2,3 GHz (VM cloud),
+environ 2 MH/s par thread en C portable ; le mineur affiche la vitesse de chaque chemin au démarrage. Sur la pool, la
+difficulté minimale est 0,1 (`--pass d=0.1`) : une part toutes les ~43 s à 10 MH/s. Un mineur CPU sha256d standard
+(cpuminer, etc.) compare le hash comme un nombre little-endian et cherche les mauvais nonces : utilisez `--cpu`.
 
 ## Stratum Ting (Daler)
 
@@ -209,6 +219,10 @@ nonce]`. L'utilisateur est votre adresse CHCQ...
 
 ## Changements
 
+- 0.10.1 : Chipcoin sur le CPU : `--algo chc --cpu [--threads N] [--cpu-path auto|shani|avx2|c]` (SHA-NI, AVX2 x8 ou
+  C portable, le chemin le plus rapide mesuré au démarrage ; threads en priorité basse ; ni GPU ni pilote NVIDIA
+  nécessaires ; vérifié sur le bloc Chipcoin 11625 et contre le sha256d de référence avant de miner) ; scripts
+  `start_chipcoin_cpu` ; `test` vérifie aussi les chemins CPU. Algorithmes GPU inchangés.
 - 0.10.0 : nouvel algorithme `--algo chc` pour Chipcoin (CHC) : SHA-256d lu en big-endian, midstate sur le CPU, deux
   compressions par essai sur le GPU (environ 840 à 900 MH/s sur une P104-100) ; stratum Bitcoin avec une coinbase
   Chipcoin (ci-dessus) ; port de pool 4093 par défaut ; scripts `start_chipcoin` ; `test` vérifie les sept

@@ -1,4 +1,4 @@
-Crypto Connection Miner 0.10.0 - multi-coin GPU miner for NVIDIA. No dev fee. (Named GostMiner up to 0.4.0.)
+Crypto Connection Miner 0.10.1 - multi-coin GPU miner for NVIDIA (Chipcoin also on the CPU). No dev fee. (Named GostMiner up to 0.4.0.)
   --algo gostd     (default)  GOSTcoin (GST)
   --algo lyra2v2              Bitmark (MARKS) and other Lyra2REv2 coins
   --algo neoscrypt            Feathercoin (FTC) and other NeoScrypt coins
@@ -10,6 +10,10 @@ Crypto Connection Miner 0.10.0 - multi-coin GPU miner for NVIDIA. No dev fee. (N
                               the current epoch stays in GPU memory (about 1 GB on NEX Chain)
   --algo chc                  Chipcoin (CHC), SHA-256d read big-endian (new in 0.10.0); the user is your CHCQ...
                               address. Bitcoin ASICs cannot mine Chipcoin, GPUs can
+  --algo chc --cpu            Chipcoin on the CPU (new in 0.10.1): any x86-64 CPU, no GPU and no NVIDIA driver
+                              needed; --threads N (default: every hardware thread, low priority); start script
+                              start_chipcoin_cpu.bat / start_chipcoin_cpu.sh. About 10-12 MH/s per thread with
+                              SHA-NI or AVX2. A standard sha256d cpuminer looks for the wrong nonces on Chipcoin
 
 NVIDIA GPUs from Maxwell (GTX 900) to Blackwell (RTX 50), Windows 10/11 x64 and Linux x86-64 (glibc 2.34+).
 Driver: a recent NVIDIA driver (CUDA 12.9 support for the newest cards; any 525+ driver for Pascal/Turing/Ampere/Ada).
@@ -38,6 +42,8 @@ Command line:
   NEX Chain, Linux:     ./crypto-connection-miner --algo ethash --user YOUR_NEXC_ADDRESS.rig1
   Chipcoin, Windows:    crypto-connection-miner.exe --algo chc --user YOUR_CHC_ADDRESS.rig1
   Chipcoin, Linux:      ./crypto-connection-miner --algo chc --user YOUR_CHC_ADDRESS.rig1
+  Chipcoin on the CPU:  crypto-connection-miner.exe --algo chc --cpu --user YOUR_CHC_ADDRESS.cpu1
+                        ./crypto-connection-miner --algo chc --cpu --user YOUR_CHC_ADDRESS.cpu1
   Ycash (other pool):   crypto-connection-miner.exe --algo equihash192 --pool HOST:PORT --user YOUR_YEC_ADDRESS.rig1
   With --user and no --pool the miner connects to the Crypto Connection pool: crypto-connection.net port 4033
   (GOSTcoin), 4043 (Bitmark), 4063 (Feathercoin), 4073 (Daler), 4083 (NEX Chain) or 4093 (Chipcoin). Any other stratum pool: add
@@ -51,6 +57,8 @@ Options:
                    4063 neoscrypt / 4073 ting / 4083 ethash / 4093 chc)
   --user A.W       your address and a worker name; --pass d=64 asks the pool for a fixed difficulty
   --gpus 0,1,2     GPUs to use (default: all)
+  --cpu            chc: mine Chipcoin on the CPU; --threads N (default: all hardware threads), --cpu-path
+                   auto|shani|avx2|c (default: the fastest measured at start-up)
   --kernel N       gostd: force a kernel variant (default: each GPU measures the 5 variants for 3 s, keeps the fastest)
   --intensity N    lyra2v2: 2^N hashes per launch (default 22 on GPUs up to 20 SM, 23-24 on larger ones,
                    limited by the GPU memory); neoscrypt: 2^N hashes per launch (default 16 up to 20 SM, 17-18 on
@@ -92,4 +100,4 @@ memory at +700 MHz (Ethash is limited by the memory clock: 18 MH/s with the memo
 Licence: GNU GPL v3 (the lyra2v2 and neoscrypt kernels come from ccminer; the ting, ethash and chc kernels and the
 Ethash CPU reference were written for this miner; the equihash192 solver comes from YecMiner, same author, Apache-2.0), see
 NOTICE.txt and COPYING.txt. Source code: https://github.com/gacanga/crypto-connection-miner (also
-CryptoConnectionMiner-v0.10.0-src.tar.gz).
+CryptoConnectionMiner-v0.10.1-src.tar.gz).

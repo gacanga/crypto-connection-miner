@@ -11,7 +11,7 @@ REM   Needs  : CUDA 12.9, Visual Studio 2022 (C++ tools). Static CUDA and C runt
 REM   Sources: gpu\gostminer.cu, gpu\lyra2v2\*.cu + gpu\neoscrypt\*.cu (MYMINER / ccminer kernels, GPL-3), gpu\ting\ting_gpu.cu,
 REM            gpu\equihash192\eq_gpu.cu + eq_host.cpp (Equihash 192,7 solver of YecMiner, Apache-2.0),
 REM            gpu\ethash\ethash_gpu.cu + src\ethash_ref.c (Ethash DAG and search, CPU reference), gpu\chc\chc_gpu.cu
-REM            (Chipcoin sha256d read big-endian), src\gost_ref.c,
+REM            (Chipcoin sha256d read big-endian), src\chc_cpu.c (Chipcoin on the CPU, --cpu), src\gost_ref.c,
 REM            src\sha256.c, src\lyra2ref\*.c + src\lyra2ref\sha3\*.c (CPU reference of lyra2rev2, MiningCore libmultihash),
 REM            src\neoscrypt\neoscrypt.c (CPU reference of NeoScrypt, BSD)
 REM   Log    : logs\build_miner.log
@@ -57,7 +57,7 @@ set "TING=gpu\ting\ting_gpu.cu"
 set "EQ=gpu\equihash192\eq_gpu.cu gpu\equihash192\eq_host.cpp"
 set "ETH=gpu\ethash\ethash_gpu.cu"
 set "CHC=gpu\chc\chc_gpu.cu"
-set "REF=src\ethash_ref.c src\neoscrypt\neoscrypt.c src\gost_ref.c src\sha256.c src\lyra2ref\lyra2re2_only.c src\lyra2ref\Lyra2.c src\lyra2ref\Sponge.c src\lyra2ref\sha3\sph_blake.c src\lyra2ref\sha3\sph_keccak.c src\lyra2ref\sha3\sph_cubehash.c src\lyra2ref\sha3\sph_skein.c src\lyra2ref\sha3\sph_bmw.c"
+set "REF=src\chc_cpu.c src\ethash_ref.c src\neoscrypt\neoscrypt.c src\gost_ref.c src\sha256.c src\lyra2ref\lyra2re2_only.c src\lyra2ref\Lyra2.c src\lyra2ref\Sponge.c src\lyra2ref\sha3\sph_blake.c src\lyra2ref\sha3\sph_keccak.c src\lyra2ref\sha3\sph_cubehash.c src\lyra2ref\sha3\sph_skein.c src\lyra2ref\sha3\sph_bmw.c"
 if not exist build\win mkdir build\win
 echo [%date% %time%] compiling gpu\gostminer.cu + lyra2v2, neoscrypt, ting, equihash192, ethash and chc kernels + CPU references >> "%LOG%"
 nvcc -O3 --threads 0 %GM_ARCHS% -Wno-deprecated-gpu-targets -allow-unsupported-compiler -std=c++17 ^

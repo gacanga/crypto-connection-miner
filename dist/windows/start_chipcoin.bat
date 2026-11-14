@@ -1,7 +1,7 @@
 @echo off
 REM start_chipcoin.bat - Chipcoin (CHC, sha256d read big-endian) on the Crypto Connection pool: put your Chipcoin address (CHCQ...) in ADDRESS, then double-click.
 REM   A Chipcoin mainnet address (post-quantum, starts with CHCQ) comes from the official Chipcoin wallet (chipcoinprotocol.com,
-REM   github.com/chipcoin-protocol/chipcoin: chipcoin wallet-generate). Bitcoin ASICs cannot mine Chipcoin: GPUs only.
+REM   github.com/chipcoin-protocol/chipcoin: chipcoin wallet-generate). Bitcoin ASICs cannot mine Chipcoin: NVIDIA GPUs here, CPUs with start_chipcoin_cpu.
 set ADDRESS=YOUR_CHC_ADDRESS
 set WORKER=rig1
 set POOL=crypto-connection.net:4093

@@ -16,6 +16,8 @@
  *   --algo chc       Chipcoin (CHC): SHA-256d of a Bitcoin-style 80-byte header, the digest read as a BIG-endian
  *                    integer (first bytes zero; Bitcoin ASICs cannot mine it); midstate + 3 rounds on the host, two
  *                    compressions per attempt on the GPU (gpu/chc) - since 0.10.0
+ *                    --cpu: Chipcoin on the CPU instead (src/chc_cpu.c: SHA-NI, AVX2 x8 or portable C, the fastest
+ *                    path measured at start-up; no GPU and no NVIDIA driver needed) - since 0.10.1
  * Solo on a local GOSTcoin wallet (RPC getwork, gostd only) or on a stratum pool (MiningCore).
  * NVIDIA GPUs from Maxwell (sm_50) to Blackwell (sm_120), Windows and Linux.
  *
@@ -55,6 +57,7 @@
  * Usage: crypto-connection-miner.exe [--algo gostd|lyra2v2|neoscrypt|ting|equihash192|ethash|chc] [--gpus 0,1,2] [--kernel N] [--intensity N]
  *          [--tpb N] [--stats 30] [--log <file>]
  *          [--selftest] [--bench S]
+ *          chc on the CPU: --cpu [--threads N] [--cpu-path auto|shani|avx2|c]
  *          solo: [--conf <gostcoin.conf>] [--host 127.0.0.1] [--port N] [--refresh 10]
  *          pool: --pool <host>:<port> --user <address>.<worker> [--pass x]
  *          --user without --pool and without --conf: the Crypto Connection pool, crypto-connection.net port 4033
@@ -98,6 +101,8 @@ static void sleep_ms(unsigned ms) { ::Sleep(ms); }
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <unistd.h>
+#include <sys/resource.h>
+#include <sys/syscall.h>
 #include <signal.h>
 typedef int SOCKET;
 #define INVALID_SOCKET (-1)
@@ -138,8 +143,9 @@ static void sleep_ms(unsigned ms) { usleep((useconds_t)ms * 1000); }
 #include "ethash/ethash_gpu.h"
 #include "ethash_ref.h"
 #include "chc/chc_gpu.h"
+#include "chc_cpu.h"
 
-#define GOSTMINER_VERSION "0.10.0"
+#define GOSTMINER_VERSION "0.10.1"
 #define MINER_NAME "Crypto Connection Miner"
 /* default pool when only --user is given: the Crypto Connection pool (crypto-connection.net) */
 #define DEFAULT_POOL_HOST "crypto-connection.net"
@@ -308,6 +314,9 @@ struct config {
 	bool selftest = false;
 	int bench = 0;
 	int kernel = -1;   /* -1 = measure at start-up */
+	bool cpu = false;     /* chc: mine on the CPU (since 0.10.1) */
+	int threads = 0;      /* --cpu: mining threads, 0 = every hardware thread */
+	int cpu_path = -1;    /* --cpu: -1 = fastest measured, else CHC_CPU_SCALAR / AVX2 / SHANI */
 	bool solo_exit_on_error = true;
 	/* pool mode (stratum) */
 	std::string pool_host, worker, worker_pass = "x";
@@ -1271,12 +1280,12 @@ static void submit_share(int gpu, const work &w, uint32_t nonce, const uint8_t d
 	const bool cand = algo_meets(digest, w.net_target);
 	if (cand) {
 		g_candidates++;
-		mlog("GPU %d: share is a BLOCK candidate, hash %s (job %s)", gpu, hash_disp(digest).c_str(), w.job_id.c_str());
+		mlog("%s %d: share is a BLOCK candidate, hash %s (job %s)", g_cfg.cpu ? "CPU thread" : "GPU", gpu, hash_disp(digest).c_str(), w.job_id.c_str());
 	}
 	std::string msg = "{\"id\":" + std::to_string(id) + ",\"method\":\"mining.submit\",\"params\":[\"" + jesc(g_cfg.worker) +
 	                  "\",\"" + jesc(w.job_id) + "\",\"" + w.en2_hex + "\",\"" + jesc(w.ntime_hex) + "\",\"" + nh + "\"]}";
 	if (s_send(msg)) g_submitted++;
-	else mlog("GPU %d: share not sent (pool disconnected)", gpu);
+	else mlog("%s %d: share not sent (pool disconnected)", g_cfg.cpu ? "CPU thread" : "GPU", gpu);
 }
 
 /* ------------------------------------------------------------------------------------------------
@@ -1286,7 +1295,8 @@ struct gpu_stat {
 	std::atomic<uint64_t> hashes{0};
 	std::atomic<bool> alive{false};
 };
-static gpu_stat g_stat[16];
+#define MAX_WORKERS 256   /* GPUs, or CPU threads with --cpu */
+static gpu_stat g_stat[MAX_WORKERS];
 
 static bool gpu_init(int gpu, int grid[NKERNELS])
 {
@@ -1905,6 +1915,130 @@ static void chc_gpu_thread(int gpu, int slot)
 		g_quit = true;
 		break;
 	}
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * chc CPU part (src/chc_cpu.c, --cpu): Chipcoin on the CPU, since 0.10.1
+ * ---------------------------------------------------------------------------------------------- */
+/* CPU self test of one path: (1) it finds the nonce of Chipcoin block 11625 in a range that contains it (target = the
+ * block's own hash), (2) every candidate of an easy target validates with gm_sha256d and none is missed */
+static bool chc_cpu_selftest(int path)
+{
+	uint8_t hdr[80];
+	unhex(CHC_REF_HEADER, hdr, 80);
+	const uint32_t nonce = (uint32_t)hdr[76] | ((uint32_t)hdr[77] << 8) | ((uint32_t)hdr[78] << 16) | ((uint32_t)hdr[79] << 24);
+	uint8_t ref[32];
+	unhex(CHC_REF_HASH, ref, 32);
+	uint64_t t64 = 0;
+	for (int i = 0; i < 8; i++) t64 = (t64 << 8) | ref[i];
+	chc_cpu_job job;
+	chc_cpu_prepare(hdr, &job);
+	uint32_t out[64];
+	uint32_t n = chc_cpu_scan(path, &job, nonce - 1003, 2011, t64, out, 64);
+	bool found = false;
+	for (uint32_t i = 0; i < n; i++) if (out[i] == nonce) found = true;
+	/* easy target: top 64 bits <= 2^56, about one hash in 256 */
+	for (int i = 0; i < 80; i++) hdr[i] = (uint8_t)(i * 37 + 11);
+	chc_cpu_prepare(hdr, &job);
+	const uint64_t easy = 1ULL << 56;
+	const uint32_t first = 0x7FFFFF00u, count = 6007;
+	std::vector<uint32_t> cand(count);
+	n = chc_cpu_scan(path, &job, first, count, easy, cand.data(), count);
+	int bad = 0, expected = 0;
+	std::set<uint32_t> got(cand.begin(), cand.begin() + n);
+	for (uint32_t k = 0; k < count; k++) {
+		const uint32_t nn = first + k;
+		uint8_t h2[80], dg[32];
+		memcpy(h2, hdr, 80);
+		h2[76] = (uint8_t)nn; h2[77] = (uint8_t)(nn >> 8); h2[78] = (uint8_t)(nn >> 16); h2[79] = (uint8_t)(nn >> 24);
+		gm_sha256d(h2, 80, dg);
+		uint64_t top = 0;
+		for (int b = 0; b < 8; b++) top = (top << 8) | dg[b];
+		const bool meets = top <= easy;
+		if (meets) expected++;
+		if (meets != (got.count(nn) > 0)) bad++;
+	}
+	const bool ok = found && expected > 0 && bad == 0 && (int)n == expected;
+	mlog("CPU self test chc (%s): Chipcoin block 11625 nonce %s, %d easy candidates checked with the reference, %d wrong -> %s",
+	     chc_cpu_path_name(path), found ? "found" : "NOT found", expected, bad, ok ? "OK" : "FAILED");
+	return ok;
+}
+
+/* nonces per second of one thread on a path (about 0.2 s of measure) */
+static double chc_cpu_speed(int path)
+{
+	uint8_t hdr[80];
+	for (int i = 0; i < 80; i++) hdr[i] = (uint8_t)(i * 13 + 5);
+	chc_cpu_job job;
+	chc_cpu_prepare(hdr, &job);
+	uint32_t out[4];
+	uint32_t first = 0;
+	uint64_t done = 0;
+	const auto t0 = std::chrono::steady_clock::now();
+	double dt = 0;
+	while (dt < 0.2) {
+		chc_cpu_scan(path, &job, first, 65536, 0, out, 4);
+		first += 65536;
+		done += 65536;
+		dt = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+	}
+	return done / dt;
+}
+
+static void cpu_thread_priority_low()
+{
+#ifdef _WIN32
+	SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_BELOW_NORMAL);
+#else
+	setpriority(PRIO_PROCESS, (id_t)syscall(SYS_gettid), 10);   /* Linux: per thread */
+#endif
+}
+
+/* one CPU mining thread: thread t of n scans its own 1/n of the 2^32 nonces of each work unit (extranonce2 slot
+ * t mod 16, own counter), so two threads never hash the same header and nonce */
+static void chc_cpu_thread(int t, int n, int path)
+{
+	cpu_thread_priority_low();
+	const bool bench = g_cfg.bench > 0;
+	const uint64_t lo = ((uint64_t)t << 32) / (uint64_t)n, hi = ((uint64_t)(t + 1) << 32) / (uint64_t)n;
+	uint32_t en2ctr = 0;
+	g_stat[t].alive = true;
+	while (!g_quit) {
+		work w;
+		if (bench) {
+			for (int i = 0; i < 80; i++) w.header[i] = (uint8_t)(rand() & 0xFF);
+			memset(w.target, 0, 32);
+			w.target64 = 0;
+			w.height = 0;
+		} else if (!pool_work(t & 0xF, en2ctr, w)) { sleep_ms(200); continue; }
+		chc_cpu_job job;
+		chc_cpu_prepare(w.header, &job);
+		const auto t0 = std::chrono::steady_clock::now();
+		uint64_t nonce = lo;
+		while (!g_quit && nonce < hi) {
+			if (!bench) {
+				if (g_gen.load() != w.gen) break;   /* new job, difficulty or connection */
+			} else if (std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count() > g_cfg.refresh) break;
+			const uint32_t cnt = (uint32_t)std::min<uint64_t>(65536, hi - nonce);
+			uint32_t res[16];
+			const uint32_t found = chc_cpu_scan(path, &job, (uint32_t)nonce, cnt, w.target64, res, 16);
+			g_stat[t].hashes += cnt;
+			nonce += cnt;
+			if (bench) continue;
+			for (uint32_t i = 0; i < found; i++) {
+				uint8_t dg[32];
+				if (!cpu_check(w, res[i], dg)) {
+					/* the scan compares the top 64 bits only: a candidate can fail the full target */
+					uint64_t top = 0;
+					for (int b = 0; b < 8; b++) top = (top << 8) | dg[b];
+					if (top > w.target64) { g_cpu_bad++; mlog("CPU thread %d: nonce %08x does not validate", t, res[i]); }
+					continue;
+				}
+				submit_share(t, w, res[i], dg);
+			}
+		}
+	}
+	g_stat[t].alive = false;
 }
 
 /* ------------------------------------------------------------------------------------------------
@@ -2935,7 +3069,9 @@ static void usage()
 	        "         --user alone: Crypto Connection pool, " DEFAULT_POOL_HOST " port 4033 (gostd) / 4043 (lyra2v2) / 4063 (neoscrypt)\n"
 	        "         / 4073 (ting) / 4053 (equihash192: the user is your transparent Ycash address, s1...)\n"
 	        "         / 4083 (ethash: NEX Chain, the user is your 0x... address)\n"
-	        "         / 4093 (chc: Chipcoin, the user is your CHCQ... address)\n");
+	        "         / 4093 (chc: Chipcoin, the user is your CHCQ... address)\n"
+	        "  chc on the CPU (no GPU needed): --algo chc --cpu [--threads N] [--cpu-path auto|shani|avx2|c]\n"
+	        "         (threads: every hardware thread by default; path: the fastest one measured at start-up)\n");
 }
 
 int main(int argc, char **argv)
@@ -2970,6 +3106,20 @@ int main(int argc, char **argv)
 		else if (a == "--selftest") g_cfg.selftest = true;
 		else if (a == "--bench") g_cfg.bench = atoi(next());
 		else if (a == "--kernel") g_cfg.kernel = atoi(next());
+		else if (a == "--cpu") g_cfg.cpu = true;
+		else if (a == "--threads" || a == "-t") {
+			g_cfg.threads = atoi(next());
+			if (g_cfg.threads < 1 || g_cfg.threads > MAX_WORKERS) { fprintf(stderr, "--threads: 1 to %d\n", MAX_WORKERS); return 1; }
+		}
+		else if (a == "--cpu-path") {
+			std::string v = next();
+			for (auto &c : v) c = (char)tolower((unsigned char)c);
+			if (v == "auto") g_cfg.cpu_path = -1;
+			else if (v == "shani" || v == "sha-ni" || v == "sha") g_cfg.cpu_path = CHC_CPU_SHANI;
+			else if (v == "avx2") g_cfg.cpu_path = CHC_CPU_AVX2;
+			else if (v == "c" || v == "scalar" || v == "portable") g_cfg.cpu_path = CHC_CPU_SCALAR;
+			else { fprintf(stderr, "--cpu-path: auto, shani, avx2 or c\n"); return 1; }
+		}
 		else if (a == "--pool") {
 			std::string hp = next();
 			if (hp.compare(0, 14, "stratum+tcp://") == 0) hp = hp.substr(14);
@@ -2993,9 +3143,10 @@ int main(int argc, char **argv)
 		                  g_cfg.algo == ALGO_CHC ? DEFAULT_POOL_PORT_CHC : DEFAULT_POOL_PORT_GOSTD;
 	}
 	if (g_cfg.pool() && (g_cfg.pool_port <= 0 || g_cfg.worker.empty())) { usage(); return 1; }
+	if (g_cfg.cpu && g_cfg.algo != ALGO_CHC) { fprintf(stderr, "--cpu: only with --algo chc (Chipcoin)\n"); return 1; }
 	if (!g_cfg.logfile.empty()) g_log = fopen(g_cfg.logfile.c_str(), "a");
-	mlog("%s %s - GPU miner for NVIDIA (gostd: GOSTcoin, lyra2v2: Bitmark, neoscrypt: Feathercoin, ting: Daler, equihash192: Ycash, ethash: NEX Chain, chc: Chipcoin), no dev fee, algorithm %s, %s mode",
-	     MINER_NAME, GOSTMINER_VERSION, algo_name(g_cfg.algo), g_cfg.bench ? "bench" : g_cfg.pool() ? "pool" : "solo");
+	mlog("%s %s - GPU miner for NVIDIA (gostd: GOSTcoin, lyra2v2: Bitmark, neoscrypt: Feathercoin, ting: Daler, equihash192: Ycash, ethash: NEX Chain, chc: Chipcoin, also on the CPU), no dev fee, algorithm %s%s, %s mode",
+	     MINER_NAME, GOSTMINER_VERSION, algo_name(g_cfg.algo), g_cfg.cpu ? " on the CPU" : "", g_cfg.bench ? "bench" : g_cfg.pool() ? "pool" : "solo");
 	if (g_cfg.algo != ALGO_GOSTD && !g_cfg.pool() && !g_cfg.bench && !g_cfg.selftest) {
 		mlog("%s: pool mode only (--pool HOST:PORT --user ADDRESS.WORKER)", algo_name(g_cfg.algo));
 		return 1;
@@ -3010,9 +3161,44 @@ int main(int argc, char **argv)
 
 	if (!cpu_reference_ok()) return 2;
 
+	int cpu_path = CHC_CPU_SCALAR;
+	if (g_cfg.cpu) {
+		/* every path this CPU can run is tested; the fastest (or the one asked) is used */
+		int paths[3] = { CHC_CPU_SHANI, CHC_CPU_AVX2, CHC_CPU_SCALAR };
+		bool ok = true;
+		double best = -1;
+		for (int p : paths) {
+			if (!chc_cpu_supported(p)) { mlog("CPU path %s: not supported by this CPU", chc_cpu_path_name(p)); continue; }
+			if (!chc_cpu_selftest(p)) { ok = false; mlog("CPU path %s: self test FAILED, not used", chc_cpu_path_name(p)); continue; }
+			if (g_cfg.cpu_path >= 0 && p != g_cfg.cpu_path) continue;
+			const double sp = chc_cpu_speed(p);
+			mlog("CPU path %s: %.2f MH/s per thread", chc_cpu_path_name(p), sp / 1e6);
+			if (sp > best) { best = sp; cpu_path = p; }
+		}
+		if (g_cfg.selftest) { mlog(ok ? "SELF TEST OK" : "SELF TEST FAILED"); return ok ? 0 : 3; }
+		/* a path that fails its self test is not used; mining goes on with the fastest path that passed */
+		if (best < 0) {
+			if (g_cfg.cpu_path >= 0) mlog("CPU path %s unusable on this CPU (not supported or self test failed)", chc_cpu_path_name(g_cfg.cpu_path));
+			else mlog("no usable CPU path, exit");
+			return ok ? 2 : 3;
+		}
+		int nt = g_cfg.threads;
+		if (nt <= 0) nt = (int)std::thread::hardware_concurrency();
+		if (nt <= 0) nt = 1;
+		if (nt > MAX_WORKERS) nt = MAX_WORKERS;
+		g_cfg.threads = nt;
+		g_cfg.gpus.clear();
+		for (int i = 0; i < nt; i++) g_cfg.gpus.push_back(i);   /* stats slots */
+		mlog("CPU mining: %d threads, path %s (about %.1f MH/s expected if every thread gets a core), low priority",
+		     nt, chc_cpu_path_name(cpu_path), best * nt / 1e6);
+	}
+
 	int ndev = 0;
-	if (cudaGetDeviceCount(&ndev) != cudaSuccess || ndev == 0) { mlog("no CUDA device"); return 2; }
+	if (!g_cfg.cpu) {
+	if (cudaGetDeviceCount(&ndev) != cudaSuccess || ndev == 0) { mlog("no CUDA device (Chipcoin can also be mined on the CPU: --algo chc --cpu)"); return 2; }
 	if (g_cfg.gpus.empty()) for (int i = 0; i < ndev; i++) g_cfg.gpus.push_back(i);
+	for (int g : g_cfg.gpus) if (g < 0 || g >= 16) { mlog("GPU %d: index out of range", g); return 2; }
+	}
 
 	if (g_cfg.selftest) {
 		bool ok = true;
@@ -3048,10 +3234,11 @@ int main(int argc, char **argv)
 	}
 
 	std::vector<std::thread> th;
-	for (size_t k = 0; k < g_cfg.gpus.size(); k++) th.emplace_back(gpu_thread, g_cfg.gpus[k], (int)k);
+	if (g_cfg.cpu) for (int k = 0; k < g_cfg.threads; k++) th.emplace_back(chc_cpu_thread, k, g_cfg.threads, cpu_path);
+	else for (size_t k = 0; k < g_cfg.gpus.size(); k++) th.emplace_back(gpu_thread, g_cfg.gpus[k], (int)k);
 
 	auto last = std::chrono::steady_clock::now();
-	uint64_t prev[16] = {0};
+	std::vector<uint64_t> prev(MAX_WORKERS, 0);
 	/* neoscrypt is about 1000 times slower per hash: speed shown in kH/s; equihash192: valid solutions per second */
 	const double unit = g_cfg.algo == ALGO_NEOSCRYPT ? 1e3 : g_cfg.algo == ALGO_EQ192 ? 1.0 : 1e6;
 	const char *uname = g_cfg.algo == ALGO_NEOSCRYPT ? "kH/s" : g_cfg.algo == ALGO_EQ192 ? "Sol/s" : "MH/s";
@@ -3072,23 +3259,26 @@ int main(int argc, char **argv)
 			prev[g] = h;
 			total += mhs;
 			if (g_stat[g].alive) alive++;
+			if (g_cfg.cpu) continue;
 			char b[48];
 			snprintf(b, sizeof(b), " GPU%d %.2f", g, mhs);
 			line += b;
 		}
+		if (g_cfg.cpu) { char b[48]; snprintf(b, sizeof(b), " CPU %d threads", g_cfg.threads); line = b; }
+		const char *unit_kind = g_cfg.cpu ? "CPU threads" : "GPU";
 		if (g_cfg.pool()) {
 			double diff;
 			{ std::lock_guard<std::mutex> lk(g_sm); diff = g_diff; }
-			mlog("%.2f %s (%s ) | shares sent %llu, accepted %llu, rejected %llu, cpu-invalid %llu | block candidates %llu | diff %.6g | pool %s | %d GPU running, %llu GPU resets",
+			mlog("%.2f %s (%s ) | shares sent %llu, accepted %llu, rejected %llu, cpu-invalid %llu | block candidates %llu | diff %.6g | pool %s | %d %s running, %llu GPU resets",
 			     total, uname, line.c_str(), (unsigned long long)g_submitted.load(), (unsigned long long)g_shares_ok.load(),
 			     (unsigned long long)g_shares_bad.load(), (unsigned long long)g_cpu_bad.load(),
-			     (unsigned long long)g_candidates.load(), diff, g_connected ? "connected" : "DISCONNECTED", alive,
+			     (unsigned long long)g_candidates.load(), diff, g_connected ? "connected" : "DISCONNECTED", alive, unit_kind,
 			     (unsigned long long)g_gpu_resets.load());
 		} else {
-			mlog("%.2f %s (%s ) | blocks found %llu, accepted %llu, rejected %llu, cpu-invalid %llu | height %llu | %d GPU running, %llu GPU resets",
+			mlog("%.2f %s (%s ) | blocks found %llu, accepted %llu, rejected %llu, cpu-invalid %llu | height %llu | %d %s running, %llu GPU resets",
 			     total, uname, line.c_str(), (unsigned long long)g_found.load(), (unsigned long long)g_accepted.load(),
 			     (unsigned long long)g_rejected.load(), (unsigned long long)g_cpu_bad.load(),
-			     (unsigned long long)g_blockcount.load(), alive, (unsigned long long)g_gpu_resets.load());
+			     (unsigned long long)g_blockcount.load(), alive, unit_kind, (unsigned long long)g_gpu_resets.load());
 		}
 		last = now;
 		if (alive == 0 && !g_quit) {
