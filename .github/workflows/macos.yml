@@ -1,0 +1,32 @@
+# macOS (Apple Silicon) build of the CPU edition: Chipcoin on the CPU (cpu/ccm_cpu.cpp, src/chc_cpu.c).
+# Builds on a GitHub-hosted Apple Silicon runner, runs the self test and a short benchmark there, and keeps the
+# packaged zip as an artifact (the release itself is published separately).
+name: macOS CPU build
+on:
+  push:
+    branches: [ main, 'macos-*' ]
+    paths: [ 'src/chc_cpu.*', 'src/sha256.*', 'cpu/**', 'macos/**', 'dist/macos/**', '.github/workflows/macos.yml' ]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build, self test and package (arm64)
+        run: sh macos/package_macos.sh 0.10.2
+      - name: Benchmark (10 s)
+        run: ./out/CryptoConnectionMiner-v0.10.2-macos-arm64/crypto-connection-miner --bench 10 --stats 5
+      - name: Binary details
+        run: |
+          file out/CryptoConnectionMiner-v0.10.2-macos-arm64/crypto-connection-miner
+          otool -L out/CryptoConnectionMiner-v0.10.2-macos-arm64/crypto-connection-miner
+          codesign -dv out/CryptoConnectionMiner-v0.10.2-macos-arm64/crypto-connection-miner 2>&1 || true
+          sysctl -n machdep.cpu.brand_string hw.perflevel0.logicalcpu || true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ccm-0.10.2-macos-arm64
+          path: |
+            out/CryptoConnectionMiner-v0.10.2-macos-arm64.zip
+            out/CryptoConnectionMiner-v0.10.2-macos-arm64.zip.sha256

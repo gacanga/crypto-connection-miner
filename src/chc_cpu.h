@@ -3,8 +3,8 @@
  * header)), the digest read as a BIG-endian integer (hashes.py hash_to_int): the FIRST digest bytes must be zero.
  * A standard sha256d CPU miner compares the digest as a little-endian number and therefore looks for the wrong nonces.
  * The first 64 header bytes are hashed once per job (midstate); each nonce then costs two SHA-256 compressions.
- * Three code paths, chosen at run time: Intel SHA extensions (SHA-NI: AMD Zen and later, Intel Ice Lake / Goldmont /
- * Alder Lake and later), AVX2 eight nonces at a time, portable C. */
+ * Code paths, chosen at run time: Intel SHA extensions (SHA-NI: AMD Zen and later, Intel Ice Lake / Goldmont /
+ * Alder Lake and later), AVX2 eight nonces at a time, ARMv8 SHA-256 instructions (Apple Silicon, since 0.10.2), portable C. */
 #ifndef GM_CHC_CPU_H
 #define GM_CHC_CPU_H
 #include <stdint.h>
@@ -12,14 +12,14 @@
 extern "C" {
 #endif
 
-enum { CHC_CPU_SCALAR = 0, CHC_CPU_AVX2 = 1, CHC_CPU_SHANI = 2 };
+enum { CHC_CPU_SCALAR = 0, CHC_CPU_AVX2 = 1, CHC_CPU_SHANI = 2, CHC_CPU_ARMSHA = 3 };
 
 typedef struct {
 	uint32_t mid[8];    /* SHA-256 state after the first 64 header bytes */
 	uint32_t tail[3];   /* big-endian words of header bytes 64..75 (merkle root tail, time, bits) */
 } chc_cpu_job;
 
-/* best code path of this CPU (CHC_CPU_SHANI, CHC_CPU_AVX2 or CHC_CPU_SCALAR) */
+/* best code path of this CPU (CHC_CPU_SHANI, CHC_CPU_AVX2, CHC_CPU_ARMSHA or CHC_CPU_SCALAR) */
 int chc_cpu_best_path(void);
 /* 1 when this CPU (and its operating system) can run the given path */
 int chc_cpu_supported(int path);

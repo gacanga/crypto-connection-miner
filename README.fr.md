@@ -12,11 +12,14 @@ version 0.4.0 : https://github.com/gacanga/GostMiner.)
 | Ting (SHA-256 sur l'en-tête balisé de Ting) | `--algo ting` | Daler (DLR) et autres coins de Ting | 4073 |
 | Equihash 192,7 (« ZcashPoW ») | `--algo equihash192` | Ycash (YEC) | (pool fermée le 10/11/2026 : utilisez `--pool`) |
 | Ethash (époques de 30000 blocs) | `--algo ethash` | NEX Chain (NEXC) et autres chaînes Ethash | 4083 |
-| SHA-256d lu en big-endian | `--algo chc` (GPU) ou `--algo chc --cpu` (CPU, nouveau en 0.10.1) | Chipcoin (CHC) | 4093 |
+| SHA-256d lu en big-endian | `--algo chc` (GPU) ou `--algo chc --cpu` (CPU, depuis 0.10.1 ; macOS depuis 0.10.2) | Chipcoin (CHC) | 4093 |
 
 - Cartes NVIDIA de Maxwell (GTX 900) à Blackwell (RTX 50), Windows 10/11 x64 et Linux x86-64 (glibc 2.34 ou plus).
   equihash192 demande environ 5,4 Go de mémoire par carte (cartes de 6 Go ou plus) ; ethash garde le DAG de l'époque
   en cours dans la mémoire du GPU (environ 1 Go sur NEX Chain en novembre 2026, +8 Mo tous les 30000 blocs).
+- **macOS sur puce Apple (M1 et suivants), depuis 0.10.2** : une édition CPU native qui mine Chipcoin avec les
+  instructions SHA-256 de la puce Apple (`CryptoConnectionMiner-v0.10.2-macos-arm64.zip` : décompresser, clic droit sur
+  `start_chipcoin_macos.command` > Ouvrir, saisir votre adresse CHCQ...). Voir [macOS](#macos-puce-apple) plus bas.
 - Mine par défaut sur la pool Crypto Connection ; toute pool stratum de ces coins fonctionne avec `--pool` (Ting : une
   pool qui parle le stratum décrit plus bas). Minage solo possible sur un wallet GOSTcoin local (getwork).
 - Chaque part trouvée par le GPU est revérifiée sur le CPU avant envoi ; les références CPU sont contrôlées sur de
@@ -142,6 +145,24 @@ environ 2 MH/s par thread en C portable ; le mineur affiche la vitesse de chaque
 difficulté minimale est 0,1 (`--pass d=0.1`) : une part toutes les ~43 s à 10 MH/s. Un mineur CPU sha256d standard
 (cpuminer, etc.) compare le hash comme un nombre little-endian et cherche les mauvais nonces : utilisez `--cpu`.
 
+## macOS (puce Apple)
+
+Le paquet macOS (`CryptoConnectionMiner-v0.10.2-macos-arm64.zip`, depuis 0.10.2) contient un binaire arm64 natif de
+l'édition CPU (`cpu/ccm_cpu.cpp`) : Chipcoin seulement, sur le processeur, avec les instructions SHA-256 ARMv8 de toutes
+les puces Apple (chemin `arm`) ou en C portable. Même ligne de commande que le mode CPU de la version NVIDIA :
+
+```
+./crypto-connection-miner --algo chc --cpu --user VOTRE_ADRESSE_CHC.mac1 --pass d=0.1
+```
+
+Le plus simple : décompresser, clic droit sur `start_chipcoin_macos.command` > Ouvrir > Ouvrir (la première fois
+seulement : le binaire est signé ad hoc mais pas notarié par Apple), saisir une fois votre adresse CHCQ... ; elle est
+gardée dans `chipcoin_address.txt` et le mineur redémarre tout seul. Par défaut le mineur utilise les cœurs performance
+du Mac, en priorité basse (QoS utility). Au démarrage, chaque chemin CPU doit réussir le test sur le bloc Chipcoin 11625.
+Le paquet est compilé et testé sur un runner GitHub Apple Silicon (`.github/workflows/macos.yml`,
+`macos/package_macos.sh`). La même édition CPU se compile sous Linux (x86-64 ou arm64) avec `linux/build_cpu.sh`. Le
+portage macOS a été lancé et testé le premier sur un Apple M1 par le développeur de Chipcoin.
+
 ## Stratum Ting (Daler)
 
 Ting n'a pas de protocole stratum à lui ; la pool Crypto Connection (Miningcore, famille `ting`) parle celui-ci :
@@ -216,9 +237,18 @@ nonce]`. L'utilisateur est votre adresse CHCQ...
 - Les références C doivent être compilées avec `-fno-strict-aliasing` : Lyra2.c enfreint les règles d'aliasing du C
   et gcc -O2 calculerait sinon un lyra2rev2 faux (le contrôle au démarrage le détecte).
 - Les scripts de lancement des paquets sont dans `dist/`.
+- Édition CPU (Chipcoin sur le processeur, sans CUDA) : macOS `macos/build_macos.sh` (Xcode Command Line Tools ;
+  `ARCH=x86_64` ou `ARCH=universal` pour les Mac Intel), paquet par `macos/package_macos.sh` ; Linux `linux/build_cpu.sh`
+  (gcc ou clang, `CC=aarch64-linux-gnu-gcc CXX=aarch64-linux-gnu-g++` pour arm64, `STATIC=1` pour un binaire statique).
 
 ## Changements
 
+- 0.10.2 : macOS sur puce Apple : édition CPU native pour Chipcoin (`cpu/ccm_cpu.cpp`, paquet
+  `CryptoConnectionMiner-v0.10.2-macos-arm64.zip` avec `start_chipcoin_macos.command`, qui demande l'adresse une
+  fois) ; nouveau chemin CPU `arm` (instructions SHA-256 ARMv8 : tous les Mac à puce Apple et les CPU Linux arm64 qui ont
+  l'extension SHA2), vérifié comme les autres sur le bloc Chipcoin 11625 ; édition CPU pour Linux (`linux/build_cpu.sh`,
+  x86-64 ou arm64). Portage lancé et testé le premier sur un Apple M1 par le développeur de Chipcoin. Versions NVIDIA
+  inchangées.
 - 0.10.1 : Chipcoin sur le CPU : `--algo chc --cpu [--threads N] [--cpu-path auto|shani|avx2|c]` (SHA-NI, AVX2 x8 ou
   C portable, le chemin le plus rapide mesuré au démarrage ; threads en priorité basse ; ni GPU ni pilote NVIDIA
   nécessaires ; vérifié sur le bloc Chipcoin 11625 et contre le sha256d de référence avant de miner) ; scripts

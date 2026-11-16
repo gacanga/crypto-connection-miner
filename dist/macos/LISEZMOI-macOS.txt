@@ -1,0 +1,36 @@
+Crypto Connection Miner 0.10.2 - macOS (Apple Silicon) - Chipcoin (CHC) sur le processeur, sans frais de dev
+=============================================================================================================
+
+Ce que c'est
+  Un mineur natif pour les Mac à puce Apple (M1, M2, M3, M4 et suivants) : il mine Chipcoin sur le processeur avec
+  les instructions SHA-256 de la puce Apple, sur la pool Crypto Connection (https://crypto-connection.net). Rien à
+  installer, rien à compiler, pas de carte graphique. Il ne mine que Chipcoin (les autres coins demandent la version NVIDIA).
+
+Démarrer
+  1. Il faut une adresse Chipcoin mainnet (CHCQ...) : wallet officiel Chipcoin, https://chipcoinprotocol.com
+     (github.com/chipcoin-protocol/chipcoin, « chipcoin wallet-generate »). Gardez le fichier du wallet en lieu sûr.
+  2. Décompressez l'archive (double-clic), ouvrez le dossier.
+  3. Clic droit sur start_chipcoin_macos.command > Ouvrir > Ouvrir (la première fois seulement : le mineur n'est pas
+     notarié par Apple, macOS demande donc une fois). Une fenêtre Terminal s'ouvre et demande votre adresse CHCQ...,
+     puis le minage démarre. Les fois suivantes : double-clic.
+  4. Suivez hashrate, solde et paiements sur https://crypto-connection.net (My stats), avec votre adresse.
+  Si macOS refuse encore (« impossible d'ouvrir ») : Réglages Système > Confidentialité et sécurité > « Ouvrir quand
+  même », ou dans le Terminal, dans le dossier : xattr -dr com.apple.quarantine .
+
+Réglages (modifier start_chipcoin_macos.command avec TextEdit)
+  WORKER   nom de ce Mac sur la pool (mac1 par défaut)
+  THREADS  threads de minage (vide = les cœurs performance ; priorité basse, le Mac reste utilisable)
+  DIFF     difficulté fixe des parts (0.1 = le minimum de la pool, environ une part toutes les 43 s à 10 MH/s ; vide = vardiff)
+  Votre adresse est gardée dans chipcoin_address.txt (supprimez-le pour en saisir une autre).
+
+Ligne de commande (Terminal, dans le dossier)
+  ./crypto-connection-miner --algo chc --cpu --user VOTRE_ADRESSE_CHC.mac1 --pass d=0.1
+  ./crypto-connection-miner --selftest          vérifie chaque chemin CPU sur le bloc Chipcoin 11625
+  ./crypto-connection-miner --bench 20          test de vitesse sans la pool
+  Options : --threads N, --cpu-path auto|arm|c, --pool HÔTE:PORT, --stats S, --log FICHIER.
+
+Au démarrage, le mineur vérifie son SHA-256 sur le bloc Chipcoin 11625 et chaque chemin CPU contre la référence : si une
+ligne affiche WRONG ou FAILED, ne minez pas et prévenez-nous. Chaque part est revérifiée avant l'envoi.
+
+Merci au développeur de Chipcoin, qui a lancé le portage macOS et l'a testé le premier sur un Apple M1.
+Code source (GPL-3) : https://github.com/gacanga/crypto-connection-miner (cpu/ccm_cpu.cpp, src/chc_cpu.c).

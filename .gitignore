@@ -6,3 +6,4 @@ logs/
 *.exp
 *.lib
 *.pdb
+out/

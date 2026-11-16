@@ -11,10 +11,13 @@ pool. **No dev fee.** (Named GostMiner up to version 0.4.0: https://github.com/g
 | Ting (SHA-256 over Ting's tagged header) | `--algo ting` | Daler (DLR) and other coins of Ting | 4073 |
 | Equihash 192,7 ("ZcashPoW") | `--algo equihash192` | Ycash (YEC) | (pool closed on 10/11/2026: use `--pool`) |
 | Ethash (epochs of 30000 blocks) | `--algo ethash` | NEX Chain (NEXC) and other Ethash chains | 4083 |
-| SHA-256d read big-endian | `--algo chc` (GPU) or `--algo chc --cpu` (CPU, new in 0.10.1) | Chipcoin (CHC) | 4093 |
+| SHA-256d read big-endian | `--algo chc` (GPU) or `--algo chc --cpu` (CPU, since 0.10.1; macOS since 0.10.2) | Chipcoin (CHC) | 4093 |
 
 - NVIDIA GPUs from Maxwell (GTX 900) to Blackwell (RTX 50), Windows 10/11 x64 and Linux x86-64 (glibc 2.34+).
 - Chipcoin can also be mined on the CPU (`--cpu`, since 0.10.1): any x86-64 CPU, no GPU and no NVIDIA driver needed.
+- **macOS on Apple Silicon (M1 and later), since 0.10.2**: a native CPU edition that mines Chipcoin with the SHA-256
+  instructions of the Apple chip (`CryptoConnectionMiner-v0.10.2-macos-arm64.zip`: unzip, right-click
+  `start_chipcoin_macos.command` > Open, type your CHCQ... address). See [macOS](#macos-apple-silicon) below.
   equihash192 needs about 5.4 GB of GPU memory per card (6 GB cards or more); ethash keeps the DAG of the current
   epoch in GPU memory (about 1 GB on NEX Chain in November 2026, +8 MB every 30000 blocks).
 - Mines on the Crypto Connection pool by default; any stratum pool of these coins works with `--pool` (Ting: a pool
@@ -139,6 +142,24 @@ Chipcoin on the CPU (`--cpu`): about 10-12 MH/s per thread with SHA-NI or AVX2 o
 2 MH/s per thread with the portable C path; the miner prints the speed of each path at start-up. On the pool, the
 minimum difficulty is 0.1 (`--pass d=0.1`): one share every ~43 s at 10 MH/s.
 
+## macOS (Apple Silicon)
+
+The macOS package (`CryptoConnectionMiner-v0.10.2-macos-arm64.zip`, since 0.10.2) holds a native arm64 binary of the
+CPU edition (`cpu/ccm_cpu.cpp`): Chipcoin only, on the CPU, with the ARMv8 SHA-256 instructions of every Apple chip
+(path `arm`) or portable C. Same command line as the CPU mode of the NVIDIA build:
+
+```
+./crypto-connection-miner --algo chc --cpu --user YOUR_CHC_ADDRESS.mac1 --pass d=0.1
+```
+
+Easiest: unzip, right-click `start_chipcoin_macos.command` > Open > Open (the first time only: the binary is signed
+ad hoc but not notarized by Apple), type your CHCQ... address once; it is kept in `chipcoin_address.txt` and the
+miner restarts by itself. By default the miner uses the performance cores of the Mac, at low priority (QoS utility).
+At start-up every CPU path must pass the Chipcoin block 11625 self test. The package is built and self-tested on a
+GitHub-hosted Apple Silicon runner (`.github/workflows/macos.yml`, `macos/package_macos.sh`). The same CPU edition
+builds on Linux (x86-64 or arm64) with `linux/build_cpu.sh`. The macOS port was started and first tested on an Apple
+M1 by the Chipcoin developer.
+
 ## Ting stratum (Daler)
 
 Ting has no stratum protocol of its own; the Crypto Connection pool (Miningcore, family `ting`) speaks this one:
@@ -218,9 +239,17 @@ transaction ids and merkle nodes are sha256d as in Bitcoin; `mining.set_difficul
 - The C references must be built with `-fno-strict-aliasing`: Lyra2.c breaks the C aliasing rules and gcc -O2 would
   otherwise compute a wrong lyra2rev2 (the start-up check catches it).
 - The start scripts of the packages are in `dist/`.
+- CPU edition (Chipcoin on the CPU, no CUDA): macOS `macos/build_macos.sh` (Xcode Command Line Tools; `ARCH=x86_64`
+  or `ARCH=universal` for Intel Macs), packaged by `macos/package_macos.sh`; Linux `linux/build_cpu.sh` (gcc or clang,
+  `CC=aarch64-linux-gnu-gcc CXX=aarch64-linux-gnu-g++` for arm64, `STATIC=1` for a static binary).
 
 ## Changes
 
+- 0.10.2: macOS on Apple Silicon: native CPU edition for Chipcoin (`cpu/ccm_cpu.cpp`, package
+  `CryptoConnectionMiner-v0.10.2-macos-arm64.zip` with `start_chipcoin_macos.command`, which asks for the address
+  once); new CPU path `arm` (ARMv8 SHA-256 instructions: every Apple Silicon Mac and arm64 Linux CPUs with the SHA2
+  extension), checked like the others on Chipcoin block 11625; Linux build of the CPU edition (`linux/build_cpu.sh`,
+  x86-64 or arm64). Port started and first tested on an Apple M1 by the Chipcoin developer. NVIDIA builds unchanged.
 - 0.10.1: Chipcoin on the CPU: `--algo chc --cpu [--threads N] [--cpu-path auto|shani|avx2|c]` (SHA-NI, AVX2 x8 or
   portable C, the fastest path measured at start-up; low-priority threads; no GPU and no NVIDIA driver needed; checked
   on Chipcoin block 11625 and against the reference sha256d before mining); start scripts `start_chipcoin_cpu`;

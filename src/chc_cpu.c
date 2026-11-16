@@ -1,13 +1,27 @@
 /* chc_cpu.c - Crypto Connection Miner: Chipcoin (CHC) proof of work on the CPU (since 0.10.1).
  * See chc_cpu.h. Each nonce costs two SHA-256 compressions: the second header block (merkle tail, time, bits, nonce
  * and padding) from the midstate, then the 32-byte digest from the initial state. Code paths:
- *   SHA-NI : the SHA-256 instructions of x86 (sha256rnds2 / sha256msg1 / sha256msg2), one nonce at a time;
- *   AVX2   : eight nonces at a time in 256-bit registers;
- *   scalar : portable C.
- * The paths are chosen at run time (cpuid), so one binary runs on every x86-64 CPU. The miner checks every path
- * against gm_sha256d and a real Chipcoin block before mining (cpu_reference / CPU self test). */
+ *   SHA-NI  : the SHA-256 instructions of x86 (sha256rnds2 / sha256msg1 / sha256msg2), one nonce at a time;
+ *   AVX2    : eight nonces at a time in 256-bit registers;
+ *   ARM SHA : the SHA-256 instructions of ARMv8 (sha256h / sha256h2 / sha256su0 / sha256su1; every Apple Silicon Mac,
+ *             most 64-bit ARM servers), one nonce at a time; built when the compiler targets them (__ARM_FEATURE_SHA2:
+ *             default for arm64 macOS, -march=armv8-a+crypto elsewhere), used when the CPU reports them (since 0.10.2);
+ *   scalar  : portable C.
+ * The paths are chosen at run time (cpuid / hwcaps), so one binary runs on every x86-64 CPU. The miner checks every
+ * path against gm_sha256d and a real Chipcoin block before mining (cpu_reference / CPU self test). */
 #include <string.h>
 #include "chc_cpu.h"
+
+#if defined(__aarch64__) && defined(__ARM_FEATURE_SHA2)
+#define CHC_ARMSHA 1
+#include <arm_neon.h>
+#if defined(__linux__)
+#include <sys/auxv.h>
+#ifndef HWCAP_SHA2
+#define HWCAP_SHA2 (1 << 6)
+#endif
+#endif
+#endif
 
 #if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
 #define CHC_X86 1
@@ -259,9 +273,70 @@ static uint64_t xcr0(void)
 }
 #endif /* CHC_X86 */
 
+#ifdef CHC_ARMSHA
+/* ------------------------------------------------------------------------------------------------ ARMv8 SHA-256 */
+/* state as two vectors: abcd = (A, B, C, D), efgh = (E, F, G, H) (lane 0 first); m0..m3 = message words W0..W15 */
+static void arm_rounds(uint32x4_t *abcd, uint32x4_t *efgh, uint32x4_t m0, uint32x4_t m1, uint32x4_t m2, uint32x4_t m3)
+{
+	uint32x4_t M[4];
+	uint32x4_t a = *abcd, e = *efgh;
+	const uint32x4_t save_a = a, save_e = e;
+	int g;
+	M[0] = m0; M[1] = m1; M[2] = m2; M[3] = m3;
+	for (g = 0; g < 16; g++) {
+		const uint32x4_t t = vaddq_u32(M[g & 3], vld1q_u32(&K256[4 * g]));
+		const uint32x4_t a_in = a;
+		a = vsha256hq_u32(a, e, t);
+		e = vsha256h2q_u32(e, a_in, t);
+		/* W[4g+16 .. 4g+19] from W[4g .. 4g+15], kept in the slot of W[4g .. 4g+3] */
+		if (g < 12) M[g & 3] = vsha256su1q_u32(vsha256su0q_u32(M[g & 3], M[(g + 1) & 3]), M[(g + 2) & 3], M[(g + 3) & 3]);
+	}
+	*abcd = vaddq_u32(a, save_a);
+	*efgh = vaddq_u32(e, save_e);
+}
+
+static uint32_t scan_armsha(const chc_cpu_job *job, uint32_t first, uint32_t count, uint64_t target64,
+                            uint32_t *out, uint32_t max_out)
+{
+	uint32_t found = 0, k;
+	const uint32x4_t mid0 = vld1q_u32(&job->mid[0]), mid1 = vld1q_u32(&job->mid[4]);
+	const uint32x4_t iv0 = vld1q_u32(&IV256[0]), iv1 = vld1q_u32(&IV256[4]);
+	static const uint32_t P2[4] = { 0x80000000u, 0, 0, 0 }, L2[4] = { 0, 0, 0, 640 };
+	static const uint32_t P3[4] = { 0x80000000u, 0, 0, 0 }, L3[4] = { 0, 0, 0, 256 };
+	const uint32x4_t pad2 = vld1q_u32(P2), len2 = vld1q_u32(L2), pad3 = vld1q_u32(P3), len3 = vld1q_u32(L3);
+	const uint32x4_t zero = vdupq_n_u32(0);
+	uint32_t m0w[4];
+	m0w[0] = job->tail[0]; m0w[1] = job->tail[1]; m0w[2] = job->tail[2];
+	for (k = 0; k < count; k++) {
+		const uint32_t nonce = first + k;
+		uint32x4_t a0 = mid0, a1 = mid1, b0 = iv0, b1 = iv1, m0;
+		uint32_t hA, hB;
+		m0w[3] = bswap32(nonce);
+		m0 = vld1q_u32(m0w);
+		arm_rounds(&a0, &a1, m0, pad2, zero, len2);
+		arm_rounds(&b0, &b1, a0, a1, pad3, len3);
+		hA = vgetq_lane_u32(b0, 0);
+		hB = vgetq_lane_u32(b0, 1);
+		if ((((uint64_t)hA << 32) | hB) <= target64 && found < max_out) out[found++] = nonce;
+	}
+	return found;
+}
+#endif /* CHC_ARMSHA */
+
 int chc_cpu_supported(int path)
 {
 	if (path == CHC_CPU_SCALAR) return 1;
+#ifdef CHC_ARMSHA
+	if (path == CHC_CPU_ARMSHA) {
+#if defined(__APPLE__)
+		return 1;   /* every arm64 Mac (Apple M1 and later) has the SHA-256 instructions */
+#elif defined(__linux__)
+		return (getauxval(AT_HWCAP) & HWCAP_SHA2) ? 1 : 0;
+#else
+		return 1;   /* built for a target that has them */
+#endif
+	}
+#endif
 #ifdef CHC_X86
 	{
 		uint32_t r0[4], r1[4], r7[4];
@@ -284,12 +359,13 @@ int chc_cpu_best_path(void)
 {
 	if (chc_cpu_supported(CHC_CPU_SHANI)) return CHC_CPU_SHANI;
 	if (chc_cpu_supported(CHC_CPU_AVX2)) return CHC_CPU_AVX2;
+	if (chc_cpu_supported(CHC_CPU_ARMSHA)) return CHC_CPU_ARMSHA;
 	return CHC_CPU_SCALAR;
 }
 
 const char *chc_cpu_path_name(int path)
 {
-	return path == CHC_CPU_SHANI ? "SHA-NI" : path == CHC_CPU_AVX2 ? "AVX2 x8" : "portable C";
+	return path == CHC_CPU_SHANI ? "SHA-NI" : path == CHC_CPU_AVX2 ? "AVX2 x8" : path == CHC_CPU_ARMSHA ? "ARM SHA-256" : "portable C";
 }
 
 uint32_t chc_cpu_scan(int path, const chc_cpu_job *job, uint32_t first, uint32_t count, uint64_t target64,
@@ -298,6 +374,9 @@ uint32_t chc_cpu_scan(int path, const chc_cpu_job *job, uint32_t first, uint32_t
 #ifdef CHC_X86
 	if (path == CHC_CPU_SHANI) return scan_shani(job, first, count, target64, out, max_out);
 	if (path == CHC_CPU_AVX2) return scan_avx2(job, first, count, target64, out, max_out);
+#endif
+#ifdef CHC_ARMSHA
+	if (path == CHC_CPU_ARMSHA) return scan_armsha(job, first, count, target64, out, max_out);
 #endif
 	return scan_scalar(job, first, count, target64, out, max_out);
 }
