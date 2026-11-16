@@ -32,5 +32,5 @@ Ligne de commande (Terminal, dans le dossier)
 Au démarrage, le mineur vérifie son SHA-256 sur le bloc Chipcoin 11625 et chaque chemin CPU contre la référence : si une
 ligne affiche WRONG ou FAILED, ne minez pas et prévenez-nous. Chaque part est revérifiée avant l'envoi.
 
-Merci au développeur de Chipcoin, qui a lancé le portage macOS et l'a testé le premier sur un Apple M1.
+Crédits : Claudio Francesconi, fondateur de Chipcoin Protocol, a lancé le portage macOS et l'a testé le premier sur un Apple M1.
 Code source (GPL-3) : https://github.com/gacanga/crypto-connection-miner (cpu/ccm_cpu.cpp, src/chc_cpu.c).

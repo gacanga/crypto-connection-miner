@@ -163,8 +163,8 @@ seulement : le binaire est signé ad hoc mais pas notarié par Apple), saisir un
 gardée dans `chipcoin_address.txt` et le mineur redémarre tout seul. Par défaut le mineur utilise les cœurs performance
 du Mac, en priorité basse (QoS utility). Au démarrage, chaque chemin CPU doit réussir le test sur le bloc Chipcoin 11625.
 Le paquet est compilé et testé sur un runner GitHub Apple Silicon (`.github/workflows/macos.yml`,
-`macos/package_macos.sh`). La même édition CPU se compile sous Linux (x86-64 ou arm64) avec `linux/build_cpu.sh`. Le
-portage macOS a été lancé et testé le premier sur un Apple M1 par le développeur de Chipcoin.
+`macos/package_macos.sh`). La même édition CPU se compile sous Linux (x86-64 ou arm64) avec `linux/build_cpu.sh`. Crédits :
+Claudio Francesconi, fondateur de Chipcoin Protocol, a lancé le portage macOS et l'a testé le premier sur un Apple M1.
 
 ## Stratum Ting (Daler)
 
@@ -250,8 +250,8 @@ nonce]`. L'utilisateur est votre adresse CHCQ...
   `CryptoConnectionMiner-v0.10.2-macos-arm64.zip` avec `start_chipcoin_macos.command`, qui demande l'adresse une
   fois) ; nouveau chemin CPU `arm` (instructions SHA-256 ARMv8 : tous les Mac à puce Apple et les CPU Linux arm64 qui ont
   l'extension SHA2), vérifié comme les autres sur le bloc Chipcoin 11625 ; édition CPU pour Linux (`linux/build_cpu.sh`,
-  x86-64 ou arm64). Portage lancé et testé le premier sur un Apple M1 par le développeur de Chipcoin. Versions NVIDIA
-  inchangées.
+  x86-64 ou arm64). Crédits : Claudio Francesconi, fondateur de Chipcoin Protocol, a lancé le portage et l'a
+  testé le premier sur un Apple M1. Versions NVIDIA inchangées.
 - 0.10.1 : Chipcoin sur le CPU : `--algo chc --cpu [--threads N] [--cpu-path auto|shani|avx2|c]` (SHA-NI, AVX2 x8 ou
   C portable, le chemin le plus rapide mesuré au démarrage ; threads en priorité basse ; ni GPU ni pilote NVIDIA
   nécessaires ; vérifié sur le bloc Chipcoin 11625 et contre le sha256d de référence avant de miner) ; scripts

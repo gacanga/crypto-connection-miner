@@ -12,8 +12,9 @@
  *   extranonce2 (2 bytes: thread slot 4 bits + counter 12 bits); share target = diff1 / difficulty (Bitcoin diff1)
  *   compared with the double SHA-256 read big-endian; submit [worker, job, extranonce2, time, nonce].
  *   Every candidate of the scan (top 64 bits) is checked again with the full 256-bit target before it is sent.
- * The macOS port was started and first tested on an Apple M1 by the Chipcoin developer (16/11/2026, a Python
- *   wrapper around src/chc_cpu.c); this native edition follows the stratum client of gpu/gostminer.cu.
+ * Credits: Claudio Francesconi, founder of Chipcoin Protocol, started the macOS port and first tested it on an
+ *   Apple M1 (16/11/2026, a Python wrapper around src/chc_cpu.c); this native edition follows the stratum client of
+ *   gpu/gostminer.cu.
  * Build: macos/build_macos.sh (clang, arm64) or linux/build_cpu.sh (gcc / clang); nothing else than the C and C++
  *   standard libraries and POSIX threads and sockets.
  * Licence: GPL-3, as the rest of Crypto Connection Miner (see LICENSE).

@@ -32,5 +32,5 @@ Command line (Terminal, in the folder)
 At start-up the miner checks its SHA-256 against Chipcoin block 11625 and every CPU path against the reference: if a
 line says WRONG or FAILED, do not mine and tell us. Every share is checked again before it is sent.
 
-Thanks to the Chipcoin developer, who started the macOS port and tested it first on an Apple M1.
+Credits: Claudio Francesconi, founder of Chipcoin Protocol, started the macOS port and first tested it on an Apple M1.
 Source code (GPL-3): https://github.com/gacanga/crypto-connection-miner (cpu/ccm_cpu.cpp, src/chc_cpu.c).

@@ -161,8 +161,8 @@ ad hoc but not notarized by Apple), type your CHCQ... address once; it is kept i
 miner restarts by itself. By default the miner uses the performance cores of the Mac, at low priority (QoS utility).
 At start-up every CPU path must pass the Chipcoin block 11625 self test. The package is built and self-tested on a
 GitHub-hosted Apple Silicon runner (`.github/workflows/macos.yml`, `macos/package_macos.sh`). The same CPU edition
-builds on Linux (x86-64 or arm64) with `linux/build_cpu.sh`. The macOS port was started and first tested on an Apple
-M1 by the Chipcoin developer.
+builds on Linux (x86-64 or arm64) with `linux/build_cpu.sh`. Credits: Claudio Francesconi, founder of Chipcoin
+Protocol, started the macOS port and first tested it on an Apple M1.
 
 ## Ting stratum (Daler)
 
@@ -253,7 +253,8 @@ transaction ids and merkle nodes are sha256d as in Bitcoin; `mining.set_difficul
   `CryptoConnectionMiner-v0.10.2-macos-arm64.zip` with `start_chipcoin_macos.command`, which asks for the address
   once); new CPU path `arm` (ARMv8 SHA-256 instructions: every Apple Silicon Mac and arm64 Linux CPUs with the SHA2
   extension), checked like the others on Chipcoin block 11625; Linux build of the CPU edition (`linux/build_cpu.sh`,
-  x86-64 or arm64). Port started and first tested on an Apple M1 by the Chipcoin developer. NVIDIA builds unchanged.
+  x86-64 or arm64). Credits: Claudio Francesconi, founder of Chipcoin Protocol, started the port and first tested it
+  on an Apple M1. NVIDIA builds unchanged.
 - 0.10.1: Chipcoin on the CPU: `--algo chc --cpu [--threads N] [--cpu-path auto|shani|avx2|c]` (SHA-NI, AVX2 x8 or
   portable C, the fastest path measured at start-up; low-priority threads; no GPU and no NVIDIA driver needed; checked
   on Chipcoin block 11625 and against the reference sha256d before mining); start scripts `start_chipcoin_cpu`;
