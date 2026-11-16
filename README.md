@@ -36,8 +36,12 @@ The same files are on the [downloads page](https://crypto-connection.net/#/downl
 |---|---|
 | CryptoConnectionMiner-v0.10.1-win64-cuda12.zip | `90f4de35d66dd5d185c36c80cd5aada9e54bfbdd6069d9a743eb1e70c158fadd` |
 | CryptoConnectionMiner-v0.10.1-linux-x64-cuda12.tar.gz | `029811300c76988969887d6d36983fbc4b31c6f5bcf296114fa77e686c5cca74` |
+| CryptoConnectionMiner-v0.10.2-macos-arm64.zip (macOS, Apple Silicon, Chipcoin on the CPU) | `2570602203066a5056a98c1ff20f3444520ea034c68f53c4f848a3e566387a17` |
 
-Check a file before you run it: Windows (PowerShell) `Get-FileHash FILE -Algorithm SHA256`, Linux `sha256sum FILE`.
+The NVIDIA builds are unchanged in 0.10.2 (still the 0.10.1 files); 0.10.2 adds the macOS package.
+
+Check a file before you run it: Windows (PowerShell) `Get-FileHash FILE -Algorithm SHA256`, Linux `sha256sum FILE`,
+macOS `shasum -a 256 FILE`.
 
 ## Quick start
 
